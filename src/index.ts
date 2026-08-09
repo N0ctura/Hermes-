@@ -1,0 +1,622 @@
+import { handleMessageForTTS, handleVoiceStateUpdate } from "./utils/tts.js";
+import {
+    Client,
+    GatewayIntentBits,
+    Partials,
+    REST,
+    Routes,
+    Collection,
+    AttachmentBuilder,
+    EmbedBuilder,
+    type Interaction,
+    type Message,
+    type TextChannel,
+    type GuildMember,
+    type VoiceState,
+    type ButtonInteraction,
+} from "discord.js";
+import { logger } from "./utils/logger.js";
+import * as sondaggioCommand from "./commands/sondaggio.js";
+import * as impostazioniCommand from "./commands/impostazioni.js";
+import * as debugTempliCommand from "./commands/debug-templi.js";
+import * as fineCommand from "./commands/fine.js";
+import * as messaggioCondivisoCommand from "./commands/messaggio-condiviso.js";
+import * as roseCommand from "./commands/rose.js";
+import * as familyCommand from "./commands/family.js";
+import { BOT_CONFIG } from "./utils/config.js";
+import { loadConfig, saveConfig, initStorage, type ActivePoll, type DeletedModifiedLog, type GuildLogsConfig } from "./utils/storage.js";
+import { schedulePollClose } from "./utils/poll-timer.js";
+import { fetchPlayerByUsername, fetchClanById } from "./utils/wolvesville.js";
+import { generateProfileCard } from "./utils/profile-card.js";
+import { handleMemberJoin, handleMemberLeave } from "./utils/welcome-leave.js";
+import { setDiscordClient } from "./utils/discord-api.js";
+import { startWebServer } from "./server.js";
+
+type BotCommand =
+    | typeof sondaggioCommand
+    | typeof impostazioniCommand
+    | typeof debugTempliCommand
+    | typeof fineCommand
+    | typeof messaggioCondivisoCommand
+    | typeof roseCommand
+    | typeof familyCommand;
+
+const commands = new Collection<string, BotCommand>();
+commands.set(sondaggioCommand.data.name, sondaggioCommand);
+commands.set(impostazioniCommand.data.name, impostazioniCommand);
+commands.set(debugTempliCommand.data.name, debugTempliCommand);
+commands.set(fineCommand.data.name, fineCommand);
+commands.set(messaggioCondivisoCommand.data.name, messaggioCondivisoCommand);
+commands.set(roseCommand.data.name, roseCommand);
+commands.set(familyCommand.data.name, familyCommand);
+
+function timeAgo(dateStr: string | null | undefined): string {
+    if (!dateStr) return "Sconosciuto";
+    const ms = Date.now() - new Date(dateStr).getTime();
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return `${sec} secondi fa`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} minuti fa`;
+    const hours = Math.floor(min / 60);
+    if (hours < 24) return `${hours} ore fa`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days} giorni fa`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months} mesi fa`;
+    return `${Math.floor(months / 12)} anni fa`;
+}
+
+function formatDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return "Sconosciuta";
+    return new Date(dateStr).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function buildPollSummaryText(poll: ActivePoll): string {
+    const votes = poll.votes ?? {};
+    const counts = new Array<number>(poll.questCount).fill(0);
+    let rimescoloCount = 0;
+    for (const v of Object.values(votes)) {
+        if (v === -1) rimescoloCount++;
+        else if (v >= 0 && v < poll.questCount) counts[v] = (counts[v] ?? 0) + 1;
+    }
+    const totalVoters = Object.keys(votes).length;
+    const lines: string[] = [`📊 **Conteggio voti (live)** — votanti: **${totalVoters}**`];
+
+    if (totalVoters === 0) {
+        lines.push("ℹ️ Ancora nessun voto registrato.");
+        return lines.join("\n");
+    }
+
+    for (let i = 0; i < poll.questCount; i++) {
+        const c = counts[i] ?? 0;
+        if (c <= 0) continue;
+        lines.push(`• Missione ${i + 1}: **${c}** ${c === 1 ? "voto" : "voti"}`);
+    }
+    if (rimescoloCount > 0) {
+        lines.push(`• 🔀 Rimescolo: **${rimescoloCount}** ${rimescoloCount === 1 ? "voto" : "voti"}`);
+    }
+    return lines.join("\n");
+}
+
+async function updatePollSummaryMessage(client: Client, poll: ActivePoll): Promise<void> {
+    const summaryMessageId = poll.summaryMessageId ?? poll.messageIds[1];
+    if (!summaryMessageId) return;
+    const channel = await client.channels.fetch(poll.channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) return;
+    const msg = await channel.messages.fetch(summaryMessageId).catch(() => null);
+    if (!msg) return;
+    await msg.edit({ content: buildPollSummaryText(poll) });
+}
+
+export async function startBot(): Promise<void> {
+    const token = BOT_CONFIG.token;
+    if (!token) {
+        logger.warn("DISCORD_BOT_TOKEN non impostato — bot Discord non avviato (modalità risparmio energetico)");
+        return;
+    }
+
+    const client = new Client({
+        intents: [
+            GatewayIntentBits.Guilds,
+            GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.GuildMembers,
+            GatewayIntentBits.MessageContent,
+            GatewayIntentBits.GuildVoiceStates,
+        ],
+        partials: [Partials.Message, Partials.Channel, Partials.GuildMember],
+    });
+
+    client.once("ready", async (c) => {
+        logger.info({ tag: c.user.tag }, "Bot Discord connesso");
+        setDiscordClient(c);
+        await startWebServer(c).catch((err) => logger.error({ err }, "Errore avvio server dashboard"));
+
+        setInterval(async () => {
+            const config = loadConfig();
+            const now = new Date();
+            let updated = false;
+
+            for (const msg of config.scheduledMessages || []) {
+                if (!msg.enabled) continue;
+
+                const scheduledDate = new Date(msg.scheduledTime);
+
+                if (msg.isRecurring) {
+                    const lastSent = msg.lastSent ? new Date(msg.lastSent) : null;
+                    let shouldSend = false;
+
+                    if (!lastSent) {
+                        shouldSend = now >= scheduledDate;
+                    } else {
+                        const timeDiff = now.getTime() - lastSent.getTime();
+                        const oneDay = 24 * 60 * 60 * 1000;
+
+                        if (msg.recurrenceInterval === 'daily') {
+                            shouldSend = timeDiff >= oneDay;
+                        } else if (msg.recurrenceInterval === 'weekly') {
+                            shouldSend = timeDiff >= 7 * oneDay;
+                        } else if (msg.recurrenceInterval === 'monthly') {
+                            shouldSend = timeDiff >= 30 * oneDay;
+                        }
+                    }
+
+                    if (shouldSend) {
+                        const channel = c.channels.cache.get(msg.channelId) as TextChannel;
+                        if (channel) {
+                            try {
+                                await channel.send(msg.message);
+                                msg.lastSent = now.toISOString();
+                                updated = true;
+                                logger.info({ guildId: msg.guildId, channelId: msg.channelId }, "Recurring message sent");
+                            } catch (err) {
+                                logger.error({ err, msgId: msg.id }, "Error sending recurring message");
+                            }
+                        }
+                    }
+                } else {
+                    if (!msg.lastSent && now >= scheduledDate) {
+                        const channel = c.channels.cache.get(msg.channelId) as TextChannel;
+                        if (channel) {
+                            try {
+                                await channel.send(msg.message);
+                                msg.lastSent = now.toISOString();
+                                msg.enabled = false;
+                                updated = true;
+                                logger.info({ guildId: msg.guildId, channelId: msg.channelId }, "One-time message sent");
+                            } catch (err) {
+                                logger.error({ err, msgId: msg.id }, "Error sending one-time message");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (updated) {
+                saveConfig(config);
+            }
+        }, 60000);
+
+        const rest = new REST().setToken(token);
+        const commandsData = [
+            sondaggioCommand.data.toJSON(),
+            impostazioniCommand.data.toJSON(),
+            debugTempliCommand.data.toJSON(),
+            fineCommand.data.toJSON(),
+            messaggioCondivisoCommand.data.toJSON(),
+            roseCommand.data.toJSON(),
+            familyCommand.data.toJSON(),
+        ];
+
+        try {
+            await rest.put(Routes.applicationCommands(c.application.id), { body: [] });
+        } catch (err) {
+            logger.warn({ err }, "Impossibile rimuovere comandi globali");
+        }
+
+        for (const [guildId] of c.guilds.cache) {
+            try {
+                await rest.put(Routes.applicationGuildCommands(c.application.id, guildId), { body: commandsData });
+                logger.info({ guildId }, "Comandi slash registrati");
+            } catch (err) {
+                logger.error({ err, guildId }, "Errore registrazione comandi");
+            }
+        }
+
+        const config = loadConfig();
+        if (config.activePoll?.closesAt) {
+            schedulePollClose(client, config.activePoll.closesAt);
+        }
+    });
+
+    client.on("guildMemberAdd", async (member) => {
+        if (member.partial) {
+            try {
+                await member.fetch();
+            } catch (err) {
+                logger.error({ err }, "Error fetching partial member");
+                return;
+            }
+        }
+        try {
+            await handleMemberJoin(member as GuildMember);
+        } catch (err) {
+            logger.error({ err }, "Error in guildMemberAdd");
+        }
+    });
+
+    client.on("guildMemberRemove", async (member) => {
+        if (member.partial) {
+            try {
+                await member.fetch();
+            } catch (err) {
+                logger.error({ err }, "Error fetching partial member");
+                return;
+            }
+        }
+        try {
+            await handleMemberLeave(member as GuildMember);
+        } catch (err) {
+            logger.error({ err }, "Error in guildMemberRemove");
+        }
+    });
+
+    client.on("interactionCreate", async (interaction: Interaction) => {
+        if (interaction.isStringSelectMenu() && interaction.customId === "vote_mission") {
+            const value = interaction.values[0] ?? "";
+            const config = loadConfig();
+            const poll = config.activePoll;
+
+            if (!poll || !poll.messageIds.includes(interaction.message.id)) {
+                await interaction.reply({ content: "❌ Questo sondaggio non è più attivo.", ephemeral: true });
+                return;
+            }
+
+            poll.votes = poll.votes ?? {};
+            const isChange = interaction.user.id in poll.votes;
+
+            if (value === "rimescolo") {
+                poll.votes[interaction.user.id] = -1;
+                saveConfig(config);
+                await updatePollSummaryMessage(client, poll).catch(() => null);
+                const verb = isChange ? "🔄 **Voto aggiornato!** Hai votato per il" : "🔀 **Voto registrato!** Hai votato per il";
+                await interaction.reply({ content: `${verb} **Rimescolo**.`, ephemeral: true });
+                return;
+            }
+
+            const selectedIdx = parseInt(value, 10);
+            if (isNaN(selectedIdx) || selectedIdx < 0 || selectedIdx >= poll.questCount) {
+                await interaction.reply({ content: "❌ Scelta non valida.", ephemeral: true });
+                return;
+            }
+
+            poll.votes[interaction.user.id] = selectedIdx;
+            saveConfig(config);
+            await updatePollSummaryMessage(client, poll).catch(() => null);
+            const label = poll.questLabels[selectedIdx] ?? `Missione ${selectedIdx + 1}`;
+            const msg = isChange
+                ? `🔄 **Voto aggiornato!** Hai cambiato voto: **${label}**`
+                : `✅ **Voto registrato!** Hai votato: **${label}**`;
+            await interaction.reply({ content: msg, ephemeral: true });
+            return;
+        }
+
+        if (interaction.isButton()) {
+            const customId = interaction.customId;
+            if (customId.startsWith("sharedmsg:edit:")) {
+                await messaggioCondivisoCommand.handleButtonInteraction(interaction as ButtonInteraction);
+                return;
+            }
+            if (customId === "rose_join" || customId === "rose_reserve" || customId === "rose_leave") {
+                await roseCommand.handleButtonInteraction(interaction as ButtonInteraction);
+                return;
+            }
+        }
+
+        if (interaction.isModalSubmit() && interaction.customId.startsWith("sharedmsg:modal:")) {
+            await messaggioCondivisoCommand.handleModalSubmit(interaction);
+            return;
+        }
+
+        if (!interaction.isAutocomplete() && !interaction.isChatInputCommand()) return;
+
+        const command = commands.get(interaction.commandName);
+
+        if (interaction.isAutocomplete()) {
+            const autocompleteCommand = command as (BotCommand & {
+                handleAutocomplete?: (interaction: any) => Promise<void>;
+            }) | undefined;
+            if (autocompleteCommand?.handleAutocomplete) {
+                try {
+                    await autocompleteCommand.handleAutocomplete(interaction);
+                } catch (err) {
+                    logger.error({ err, command: interaction.commandName }, "Errore autocomplete");
+                }
+            }
+            return;
+        }
+        if (!command) return;
+
+        try {
+            await command.execute(interaction);
+        } catch (err) {
+            logger.error({ err, command: interaction.commandName }, "Errore comando");
+            const errorMsg = { content: "❌ Si è verificato un errore. Riprova più tardi.", ephemeral: true };
+            if (interaction.replied || interaction.deferred) await interaction.followUp(errorMsg);
+            else await interaction.reply(errorMsg);
+        }
+    });
+
+    client.on("messageCreate", async (message: Message) => {
+        if (message.author.bot) return;
+        const content = message.content.trim();
+        const guildId = message.guild?.id;
+
+        if (guildId && message.member) {
+            await handleMessageForTTS({
+                guildId,
+                channelId: message.channel.id,
+                content,
+                member: message.member as GuildMember,
+                client,
+            });
+        }
+
+        if (guildId) {
+            const config = loadConfig();
+            const autoResponses = (config.autoResponses || []).filter(r => r.guildId === guildId && r.enabled);
+
+            for (const response of autoResponses) {
+                let matched = false;
+
+                if (response.isRegex) {
+                    try {
+                        const regex = new RegExp(response.trigger, 'i');
+                        matched = regex.test(content);
+                    } catch (err) {
+                        logger.error({ err, trigger: response.trigger }, "Invalid regex in auto response");
+                        continue;
+                    }
+                } else {
+                    matched = content.toLowerCase().includes(response.trigger.toLowerCase());
+                }
+
+                if (matched) {
+                    try {
+                        await message.reply(response.response);
+                        logger.info({ guildId, trigger: response.trigger }, "Auto response sent");
+                    } catch (err) {
+                        logger.error({ err, responseId: response.id }, "Error sending auto response");
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (!content.startsWith(".") || content.length < 2) return;
+        if (content.startsWith("./") || content.startsWith("..")) return;
+
+        const username = content.slice(1).trim();
+        if (!username) return;
+
+        try {
+            if (message.channel.isTextBased() && 'sendTyping' in message.channel) {
+                await message.channel.sendTyping();
+            }
+            const player = await fetchPlayerByUsername(username);
+
+            if (!player) {
+                await message.reply({ content: `❌ Nessun giocatore trovato con il nome **${username}**.` });
+                return;
+            }
+
+            const p = player as any;
+            const stats = player.gameStats;
+            const totalWins = stats?.totalWinCount ?? 0;
+            const totalLosses = stats?.totalLoseCount ?? 0;
+            const totalTies = stats?.totalTieCount ?? 0;
+            const gamesPlayed = totalWins + totalLosses + totalTies;
+            const villageWins = stats?.villageWinCount ?? 0;
+            const wolfWins = stats?.werewolfWinCount ?? 0;
+            const winRate = gamesPlayed > 0 ? ((totalWins / gamesPlayed) * 100).toFixed(1) : null;
+
+            let clanName: string | undefined;
+            if (player.clanId) {
+                const clan = await fetchClanById(player.clanId);
+                clanName = clan?.name;
+            }
+
+            const avatarRaw = p.equippedAvatar;
+            const avatarUrl: string | undefined = avatarRaw?.url as string | undefined;
+
+            const profileIconUrl = p.profileIconId
+                ? `https://cdn.wolvesville.com/profileIcons/${p.profileIconId as string}.png`
+                : undefined;
+
+            const cardBuffer = await generateProfileCard({
+                username: player.username,
+                level: player.level,
+                personalMessage: player.personalMessage,
+                clanName,
+                avatarUrl,
+                gamesPlayed,
+                totalWins,
+                villageWins,
+                wolfWins,
+                winRate,
+                rosesReceived: p.receivedRosesCount,
+                rosesSent: p.sentRosesCount,
+            });
+
+            const fileName = `profilo_${player.username}.png`;
+            const attachment = new AttachmentBuilder(cardBuffer, { name: fileName });
+
+            const embed = new EmbedBuilder()
+                .setColor(0x8b0000)
+                .setTitle(`🔎 ${player.username}`)
+                .setImage(`attachment://${fileName}`);
+
+            if (profileIconUrl) embed.setThumbnail(profileIconUrl);
+
+            if (player.personalMessage) {
+                embed.setDescription(`*"${player.personalMessage}"*`);
+            }
+
+            embed.addFields(
+                { name: "🆔 ID", value: `\`${player.id}\``, inline: false },
+                { name: "🏰 Clan", value: clanName ?? "Nessuno", inline: true },
+                { name: "🕐 Ultimo accesso", value: timeAgo(p.lastOnline), inline: true },
+                { name: "📅 Creato", value: formatDate(p.creationTime), inline: true },
+            );
+
+            await message.reply({ embeds: [embed], files: [attachment] });
+            logger.info({ username: player.username, avatarUrl }, "Scheda giocatore inviata");
+        } catch (err) {
+            logger.error({ err, username }, "Errore ricerca giocatore");
+            await message.reply({ content: "❌ Errore durante la ricerca del giocatore. Riprova più tardi." });
+        }
+    });
+
+    function getGuildLogsConfig(guildId: string): GuildLogsConfig {
+        const config = loadConfig();
+        return (
+            config.logsConfigs?.find((c) => c.guildId === guildId) ?? {
+                guildId,
+                guildName: "Unknown",
+                enabled: false,
+                channelId: undefined,
+                interceptApps: true,
+                interceptUsers: true,
+            }
+        );
+    }
+
+    async function handleLog(logEntry: DeletedModifiedLog) {
+        const config = loadConfig();
+        const logsConfig = getGuildLogsConfig(logEntry.guildId);
+
+        const logs = config.deletedModifiedLogs ?? [];
+        logs.unshift(logEntry);
+        const trimmedLogs = logs.slice(0, 100);
+        saveConfig({ ...config, deletedModifiedLogs: trimmedLogs });
+
+        if (logsConfig.enabled && logsConfig.channelId) {
+            const channel = client.channels.cache.get(logsConfig.channelId) as TextChannel;
+            if (channel) {
+                try {
+                    const embed = new EmbedBuilder()
+                        .setColor(logEntry.type === "deleted" ? 0xed4245 : 0xfee75c)
+                        .setTitle(logEntry.type === "deleted" ? "🗑️ Messaggio Eliminato" : "✏️ Messaggio Modificato")
+                        .setAuthor({
+                            name: logEntry.author.username,
+                            iconURL: logEntry.author.avatar,
+                        })
+                        .addFields(
+                            { name: "Canale", value: `<#${logEntry.channelId}>`, inline: true },
+                            { name: "Data", value: `<t:${Math.floor(new Date(logEntry.timestamp).getTime() / 1000)}:F>`, inline: true }
+                        )
+                        .setTimestamp();
+
+                    if (logEntry.type === "deleted" && logEntry.deletedContent) {
+                        embed.addFields({ name: "Contenuto Eliminato", value: logEntry.deletedContent.length > 1024 ? logEntry.deletedContent.substring(0, 1021) + "..." : logEntry.deletedContent });
+                    } else if (logEntry.type === "modified") {
+                        if (logEntry.oldContent) {
+                            embed.addFields({ name: "Prima", value: logEntry.oldContent.length > 1024 ? logEntry.oldContent.substring(0, 1021) + "..." : logEntry.oldContent });
+                        }
+                        if (logEntry.newContent) {
+                            embed.addFields({ name: "Dopo", value: logEntry.newContent.length > 1024 ? logEntry.newContent.substring(0, 1021) + "..." : logEntry.newContent });
+                        }
+                    }
+
+                    await channel.send({ embeds: [embed] });
+                } catch (err) {
+                    logger.error({ err, guildId: logEntry.guildId }, "Errore invio log nel canale");
+                }
+            }
+        }
+    }
+
+    client.on("messageDelete", async (message) => {
+        if (!message.guildId) return;
+
+        const logsConfig = getGuildLogsConfig(message.guildId);
+        if (!logsConfig.enabled) return;
+
+        const isBot = message.author?.bot || false;
+        if (isBot && !logsConfig.interceptApps) return;
+        if (!isBot && !logsConfig.interceptUsers) return;
+
+        const logEntry: DeletedModifiedLog = {
+            id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            guildId: message.guildId,
+            timestamp: new Date().toISOString(),
+            type: "deleted",
+            author: message.author ? {
+                id: message.author.id,
+                username: message.author.tag,
+                avatar: message.author.displayAvatarURL(),
+                isBot: message.author.bot,
+            } : {
+                id: "unknown",
+                username: "Unknown",
+                avatar: "",
+                isBot: false,
+            },
+            channelId: message.channelId,
+            channelName: (message.channel as any)?.name || "Unknown",
+            deletedContent: message.content ?? undefined,
+        };
+
+        await handleLog(logEntry);
+    });
+
+    client.on("messageUpdate", async (oldMessage, newMessage) => {
+        if (!oldMessage.guildId) return;
+
+        const logsConfig = getGuildLogsConfig(oldMessage.guildId);
+        if (!logsConfig.enabled) return;
+
+        const isBot = oldMessage.author?.bot || false;
+        if (isBot && !logsConfig.interceptApps) return;
+        if (!isBot && !logsConfig.interceptUsers) return;
+
+        if (oldMessage.content === newMessage.content) return;
+
+        const logEntry: DeletedModifiedLog = {
+            id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            guildId: oldMessage.guildId,
+            timestamp: new Date().toISOString(),
+            type: "modified",
+            author: oldMessage.author ? {
+                id: oldMessage.author.id,
+                username: oldMessage.author.tag,
+                avatar: oldMessage.author.displayAvatarURL(),
+                isBot: oldMessage.author.bot,
+            } : {
+                id: "unknown",
+                username: "Unknown",
+                avatar: "",
+                isBot: false,
+            },
+            channelId: oldMessage.channelId,
+            channelName: (oldMessage.channel as any)?.name || "Unknown",
+            oldContent: oldMessage.content ?? undefined,
+            newContent: newMessage.content ?? undefined,
+        };
+
+        await handleLog(logEntry);
+    });
+
+    client.on("voiceStateUpdate", async (oldState: VoiceState, newState: VoiceState) => {
+        await handleVoiceStateUpdate(oldState, newState);
+    });
+
+    client.on("error", (err) => { logger.error({ err }, "Errore client Discord"); });
+
+    await initStorage();
+    await client.login(token);
+}
+
+startBot().catch((err) => {
+    logger.error({ err }, "Avvio bot fallito");
+    process.exit(1);
+});
