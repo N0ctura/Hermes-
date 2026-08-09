@@ -7,9 +7,9 @@
     "scripts": {
         "dev": "node --loader ts-node/esm src/index.ts",
         "dev:dashboard": "vite --config dashboard/vite.config.ts",
-        "build": "tsc && vite build --config dashboard/vite.config.ts",
-        "build:bot": "tsc",
-        "build:dashboard": "vite build --config dashboard/vite.config.ts",
+        "build": "npx -y typescript@5.4.5/tsc && npx -y vite@6.2.3 build --config dashboard/vite.config.ts",
+        "build:bot": "npx -y typescript@5.4.5/tsc",
+        "build:dashboard": "npx -y vite@6.2.3 build --config dashboard/vite.config.ts",
         "start": "node --enable-source-maps dist/index.js",
         "typecheck": "tsc --noEmit",
         "pm2:start": "pm2 start dist/index.js --name hermes-bot",

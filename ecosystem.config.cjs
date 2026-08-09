@@ -1,7 +1,10 @@
-// ecosystem.config.js
+// ecosystem.config.cjs
+// IMPORTANTE: estensione .cjs invece di .js perché package.json ha "type": "module".
+// Senza .cjs, Node.js tratta il file come ES module e require()/module.exports non funzionano.
+//
 // Configurazione PM2 per Hermes v1 (bot Discord + dashboard HTTP)
-// Avvio:  pm2 start ecosystem.config.js
-// Riavvio dopo build: pm2 reload ecosystem.config.js
+// Avvio:  pm2 start ecosystem.config.cjs
+// Riavvio dopo build: pm2 reload ecosystem.config.cjs
 // Log live: pm2 logs hermes-bot
 // Stato:    pm2 status
 // Persisti: pm2 save && pm2 startup (per autostart dopo reboot Linux)

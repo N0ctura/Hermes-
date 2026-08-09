@@ -31,14 +31,14 @@ echo
 echo "▶ [4/5] Hot-reload via PM2..."
 if command -v pm2 >/dev/null 2>&1; then
   if pm2 describe "$BOT_NAME" >/dev/null 2>&1; then
-    pm2 reload ecosystem.config.js --update-env
+    pm2 reload ecosystem.config.cjs --update-env
   else
-    pm2 start ecosystem.config.js
+    pm2 start ecosystem.config.cjs
   fi
   pm2 save
 else
   echo "⚠️  PM2 non installato globalmente. Provo con npx..."
-  npx --yes pm2 start ecosystem.config.js
+  npx --yes pm2 start ecosystem.config.cjs
   npx --yes pm2 save
 fi
 
