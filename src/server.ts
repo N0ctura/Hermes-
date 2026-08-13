@@ -52,6 +52,11 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
   app.disable("x-powered-by");
   app.use(express.json({ limit: "20mb" }));
 
+  const assetsDir = path.resolve(__dirname, "..", "assets");
+  if (existsSync(assetsDir)) {
+    app.use("/assets", express.static(assetsDir));
+  }
+
   /* ===== Auth ===== */
   app.get("/api/auth/meta", (_req, res) => {
     res.json({ needPassword: Boolean(DASHBOARD_PASSWORD), port: DASHBOARD_PORT });

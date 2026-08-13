@@ -2,6 +2,7 @@ import {
   ChatInputCommandInteraction,
   SlashCommandBuilder,
   PermissionFlagsBits,
+  MessageFlags,
 } from "discord.js";
 import { normalize } from "../utils/normalize.js";
 import { loadConfig, saveConfig, THRESHOLD_ROLE_ID_SET, DEFAULT_THRESHOLD_TIERS } from "../utils/storage.js";
@@ -12,7 +13,7 @@ export const data = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const guild = interaction.guild;
   if (!guild) { await interaction.editReply("❌ Solo in un server."); return; }
 
@@ -113,6 +114,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     }
     if (chunk) chunks.push(chunk);
     await interaction.editReply({ content: chunks[0] });
-    for (const c of chunks.slice(1)) await interaction.followUp({ content: c, ephemeral: true });
+    for (const c of chunks.slice(1)) await interaction.followUp({ content: c, flags: MessageFlags.Ephemeral });
   }
 }

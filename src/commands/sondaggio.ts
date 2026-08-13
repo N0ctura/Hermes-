@@ -7,6 +7,7 @@ import {
   StringSelectMenuOptionBuilder,
   EmbedBuilder,
   PermissionFlagsBits,
+  MessageFlags,
   type TextChannel,
   type Message,
 } from "discord.js";
@@ -16,6 +17,7 @@ import { loadConfig, saveConfig } from "../utils/storage.js";
 import { fetchAvailableQuests, type WvQuest } from "../utils/wolvesville.js";
 import { addNumberBadge } from "../utils/image-badge.js";
 import { normalize } from "../utils/normalize.js";
+import { logger } from "../utils/logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = join(process.cwd(), "assets");
@@ -121,7 +123,7 @@ export async function publishPoll(
 }
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const guild = interaction.guild;
   if (!guild) {
@@ -202,6 +204,12 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   const dataFine = interaction.options.getString("data_fine") ?? "";
   const hideRimescolo = config.lastPollWasShuffled ?? false;
 
+  if (hideRimescolo) {
+    logger.info("🔀 Bottone rimescolo NASCOSTO in questo sondaggio (lastPollWasShuffled=true). Resetto il flag per i sondaggi successivi.");
+  } else {
+    logger.info("Bottone rimescolo VISIBILE nel prossimo sondaggio.");
+  }
+
   config.lastPollWasShuffled = false;
 
   const { introMessageId, messageIds, questLabels, questImageUrls } = await publishPoll(
@@ -271,6 +279,9 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     closesAt
       ? `⏱️ Chiusura automatica: **${new Date(closesAt).toLocaleString("it-IT")}**`
       : `⏱️ Nessun timer impostato`,
+    hideRimescolo
+      ? `🔀 **Rimescolo NASCOSTO** (l'ultima volta ha vinto il rimescolo — non puoi farne 2 di fila!)`
+      : `🔀 Rimescolo abilitato`,
   ];
   if (notifyResults.length > 0) replyLines.push("", "**Notifiche:**", ...notifyResults);
   await interaction.editReply({ content: replyLines.join("\n") });

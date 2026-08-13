@@ -1,3 +1,35 @@
+process.on("unhandledRejection", (reason: unknown, promise: Promise<unknown>) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    const code = (err as any)?.code;
+    const name = err?.name;
+    const msg = err?.message ?? "";
+    const isNet =
+        name === "ConnectTimeoutError" ||
+        name === "TimeoutError" ||
+        msg.includes("handshake") ||
+        msg.includes("timeout") ||
+        msg.includes("socket") ||
+        msg.includes("ENOTFOUND") ||
+        msg.includes("ETIMEDOUT") ||
+        msg.includes("ECONN") ||
+        code?.startsWith("UND_");
+    if (isNet) {
+        logger.warn({ code, name, msg: msg.slice(0, 300) }, "unhandledRejection: problema di rete (non fatale, attendi riconnessione)");
+    } else {
+        logger.error({ err, stack: err.stack?.slice(0, 800) }, "unhandledRejection: errore non gestito (non arresto il processo)");
+    }
+});
+
+process.on("uncaughtException", (err: Error) => {
+    const msg = err?.message ?? "";
+    const isNet = msg.includes("handshake") || msg.includes("timeout") || msg.includes("socket") || msg.includes("ECONN");
+    if (isNet) {
+        logger.warn({ msg: msg.slice(0, 300) }, "uncaughtException: problema di rete (non fatale)");
+    } else {
+        logger.error({ err, stack: err.stack?.slice(0, 800) }, "uncaughtException: errore grave (non arresto il processo)");
+    }
+});
+
 import { handleMessageForTTS, handleVoiceStateUpdate } from "./utils/tts.js";
 import {
     Client,
@@ -8,6 +40,7 @@ import {
     Collection,
     AttachmentBuilder,
     EmbedBuilder,
+    MessageFlags,
     type Interaction,
     type Message,
     type TextChannel,
@@ -49,6 +82,63 @@ commands.set(fineCommand.data.name, fineCommand);
 commands.set(messaggioCondivisoCommand.data.name, messaggioCondivisoCommand);
 commands.set(roseCommand.data.name, roseCommand);
 commands.set(familyCommand.data.name, familyCommand);
+
+const NETWORK_ERROR_CODES = new Set([
+    "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ECONNABORTED",
+    "EHOSTUNREACH", "ENETUNREACH", "ENETDOWN", "EAI_AGAIN", "ESOCKET",
+    "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET", "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_BODY_TIMEOUT", "UND_ERR_RESPONSE_STATUS_CODE", "AbortError",
+]);
+
+function isNetworkError(err: Error | null | undefined): boolean {
+    if (!err) return false;
+    const anyErr = err as any;
+    const code: string | undefined = anyErr.code;
+    if (code && NETWORK_ERROR_CODES.has(code)) return true;
+    if (anyErr.name === "ConnectTimeoutError" || anyErr.name === "TimeoutError") return true;
+    if (anyErr.constructor?.name === "AggregateError" && Array.isArray((anyErr as any).aggregateErrors)) {
+        return (anyErr as any).aggregateErrors.some((e: any) => isNetworkError(e));
+    }
+    const msg = (err.message ?? "").toLowerCase();
+    if (msg.includes("getaddrinfo") || msg.includes("socket hang up") || msg.includes("network") ||
+        msg.includes("timeout") || msg.includes("connect") || msg.includes("econn") || msg.includes("dns")) {
+        return true;
+    }
+    return false;
+}
+
+function safeReplyEphemeral(interaction: any, content: string) {
+    Promise.resolve()
+        .then(async () => {
+            if (!interaction || typeof interaction.reply !== "function") return;
+            await interaction.reply({ content, flags: "Ephemeral" });
+        })
+        .catch((err) => {
+            const code = (err as any)?.code ?? 0;
+            if (code === 10062 || isNetworkError(err as Error)) {
+                logger.debug({ code }, "safeReplyEphemeral: interazione scaduta o rete down (non fatale)");
+            } else {
+                logger.warn({ err }, "safeReplyEphemeral: risposta fallita");
+            }
+        });
+}
+
+function safeExecute(fn: () => Promise<void>, label: string) {
+    Promise.resolve()
+        .then(fn)
+        .catch((err) => {
+            if (isNetworkError(err as Error)) {
+                logger.warn({ label }, "Interazione interrotta: problema di rete");
+            } else {
+                const code = (err as any)?.code ?? 0;
+                if (code === 10062) {
+                    logger.debug({ label }, "Interazione scaduta (Unknown interaction)");
+                } else {
+                    logger.error({ err, label }, "Errore interazione");
+                }
+            }
+        });
+}
 
 function timeAgo(dateStr: string | null | undefined): string {
     if (!dateStr) return "Sconosciuto";
@@ -126,7 +216,7 @@ export async function startBot(): Promise<void> {
         partials: [Partials.Message, Partials.Channel, Partials.GuildMember],
     });
 
-    client.once("ready", async (c) => {
+    client.once("clientReady", async (c) => {
         logger.info({ tag: c.user.tag }, "Bot Discord connesso");
         setDiscordClient(c);
         await startWebServer(c).catch((err) => logger.error({ err }, "Errore avvio server dashboard"));
@@ -267,7 +357,7 @@ export async function startBot(): Promise<void> {
             const poll = config.activePoll;
 
             if (!poll || !poll.messageIds.includes(interaction.message.id)) {
-                await interaction.reply({ content: "❌ Questo sondaggio non è più attivo.", ephemeral: true });
+                safeReplyEphemeral(interaction, "❌ Questo sondaggio non è più attivo.");
                 return;
             }
 
@@ -279,13 +369,13 @@ export async function startBot(): Promise<void> {
                 saveConfig(config);
                 await updatePollSummaryMessage(client, poll).catch(() => null);
                 const verb = isChange ? "🔄 **Voto aggiornato!** Hai votato per il" : "🔀 **Voto registrato!** Hai votato per il";
-                await interaction.reply({ content: `${verb} **Rimescolo**.`, ephemeral: true });
+                safeReplyEphemeral(interaction, `${verb} **Rimescolo**.`);
                 return;
             }
 
             const selectedIdx = parseInt(value, 10);
             if (isNaN(selectedIdx) || selectedIdx < 0 || selectedIdx >= poll.questCount) {
-                await interaction.reply({ content: "❌ Scelta non valida.", ephemeral: true });
+                safeReplyEphemeral(interaction, "❌ Scelta non valida.");
                 return;
             }
 
@@ -296,24 +386,30 @@ export async function startBot(): Promise<void> {
             const msg = isChange
                 ? `🔄 **Voto aggiornato!** Hai cambiato voto: **${label}**`
                 : `✅ **Voto registrato!** Hai votato: **${label}**`;
-            await interaction.reply({ content: msg, ephemeral: true });
+            safeReplyEphemeral(interaction, msg);
             return;
         }
 
         if (interaction.isButton()) {
             const customId = interaction.customId;
             if (customId.startsWith("sharedmsg:edit:")) {
-                await messaggioCondivisoCommand.handleButtonInteraction(interaction as ButtonInteraction);
+                safeExecute(async () => {
+                    await messaggioCondivisoCommand.handleButtonInteraction(interaction as ButtonInteraction);
+                }, `button:${customId}`);
                 return;
             }
             if (customId === "rose_join" || customId === "rose_reserve" || customId === "rose_leave") {
-                await roseCommand.handleButtonInteraction(interaction as ButtonInteraction);
+                safeExecute(async () => {
+                    await roseCommand.handleButtonInteraction(interaction as ButtonInteraction);
+                }, `button:${customId}`);
                 return;
             }
         }
 
         if (interaction.isModalSubmit() && interaction.customId.startsWith("sharedmsg:modal:")) {
-            await messaggioCondivisoCommand.handleModalSubmit(interaction);
+            safeExecute(async () => {
+                await messaggioCondivisoCommand.handleModalSubmit(interaction);
+            }, `modal:${interaction.customId}`);
             return;
         }
 
@@ -329,7 +425,11 @@ export async function startBot(): Promise<void> {
                 try {
                     await autocompleteCommand.handleAutocomplete(interaction);
                 } catch (err) {
-                    logger.error({ err, command: interaction.commandName }, "Errore autocomplete");
+                    if (isNetworkError(err as Error)) {
+                        logger.debug({ command: interaction.commandName }, "Autocomplete interrotto da errore rete");
+                    } else {
+                        logger.error({ err, command: interaction.commandName }, "Errore autocomplete");
+                    }
                 }
             }
             return;
@@ -339,10 +439,31 @@ export async function startBot(): Promise<void> {
         try {
             await command.execute(interaction);
         } catch (err) {
-            logger.error({ err, command: interaction.commandName }, "Errore comando");
-            const errorMsg = { content: "❌ Si è verificato un errore. Riprova più tardi.", ephemeral: true };
-            if (interaction.replied || interaction.deferred) await interaction.followUp(errorMsg);
-            else await interaction.reply(errorMsg);
+            const cmdName = interaction.commandName;
+            if (isNetworkError(err as Error)) {
+                logger.warn({ command: cmdName, err }, "Errore comando: problema di rete");
+            } else {
+                logger.error({ err, command: cmdName }, "Errore comando");
+            }
+            const errorMsg = { content: "❌ Si è verificato un errore. Riprova più tardi.", flags: "Ephemeral" as const };
+            try {
+                if (interaction.isChatInputCommand()) {
+                    if (interaction.replied || interaction.deferred) {
+                        await interaction.followUp(errorMsg);
+                    } else {
+                        await interaction.reply(errorMsg);
+                    }
+                }
+            } catch (replyErr) {
+                const code = (replyErr as any)?.code ?? (replyErr as any)?.status ?? 0;
+                if (code === 10062) {
+                    logger.debug({ command: cmdName }, "Catch-all: interazione scaduta durante errore rete");
+                } else if (isNetworkError(replyErr as Error)) {
+                    logger.debug({ command: cmdName }, "Catch-all: impossibile inviare messaggio errore (rete down)");
+                } else {
+                    logger.warn({ err: replyErr, command: cmdName }, "Catch-all: errore secondario durante risposta errore");
+                }
+            }
         }
     });
 
@@ -610,10 +731,58 @@ export async function startBot(): Promise<void> {
         await handleVoiceStateUpdate(oldState, newState);
     });
 
-    client.on("error", (err) => { logger.error({ err }, "Errore client Discord"); });
+    client.on("error", (err) => {
+        if (isNetworkError(err)) {
+            logger.warn({ msg: (err as Error).message, code: (err as any).code }, "Client Discord: interruzione di rete");
+        } else {
+            logger.error({ err }, "Errore client Discord");
+        }
+    });
+
+    client.on("warn", (info: string) => {
+        logger.warn({ info }, "Client Discord: warning");
+    });
+
+    client.on("shardDisconnect", (_event: any, shardId: number) => {
+        logger.warn({ shardId }, "Shard Discord: disconnesso — discord.js riproverà a riconnettersi");
+    });
+
+    client.on("shardResume", (replayed: number, shardId: number) => {
+        logger.info({ shardId, replayed }, "Shard Discord: riconnesso con successo");
+    });
+
+    client.on("shardError", (err: Error, shardId: number) => {
+        if (isNetworkError(err) || err.message.includes("handshake") || err.message.includes("timeout")) {
+            logger.warn({ shardId, msg: err.message.slice(0, 200) }, "Shard Discord errore rete: pausa e attendi riconnessione");
+        } else {
+            logger.error({ err, shardId }, "Shard Discord errore");
+        }
+    });
+
+    client.on("ready", () => {
+        logger.debug("Evento ready ricevuto (deprecato, usare clientReady)");
+    });
 
     await initStorage();
-    await client.login(token);
+
+    let loginAttempts = 0;
+    const MAX_LOGIN_ATTEMPTS = 10;
+    while (true) {
+        loginAttempts++;
+        try {
+            await client.login(token);
+            break;
+        } catch (err) {
+            if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+                logger.error({ err, attempts: loginAttempts }, "Login Discord fallito dopo molti tentativi — arresto");
+                throw err;
+            }
+            const waitSec = Math.min(5 * loginAttempts, 30);
+            logger.warn({ attempts: loginAttempts, waitSec, msg: (err as Error).message.slice(0, 200) },
+                "Login Discord fallito — riprovo tra poco");
+            await new Promise((r) => setTimeout(r, waitSec * 1000));
+        }
+    }
 }
 
 startBot().catch((err) => {

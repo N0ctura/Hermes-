@@ -5,23 +5,48 @@ import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   EmbedBuilder,
+  AttachmentBuilder,
+  type MessageCreateOptions,
 } from "discord.js";
 import { logger } from "./logger.js";
 import { loadConfig, saveConfig, getMessages, type ActivePoll } from "./storage.js";
 import { normalize } from "./normalize.js";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 let activeTimer: ReturnType<typeof setTimeout> | null = null;
+let safetyInterval: ReturnType<typeof setInterval> | null = null;
+let closeInProgress = false;
 
 export function schedulePollClose(client: Client, closesAt: string): void {
   if (activeTimer !== null) { clearTimeout(activeTimer); activeTimer = null; }
+  if (safetyInterval !== null) { clearInterval(safetyInterval); safetyInterval = null; }
+
   const msLeft = new Date(closesAt).getTime() - Date.now();
   if (msLeft <= 0) { void closePoll(client); return; }
   logger.info({ closesAt, msLeft }, "Timer sondaggio programmato");
   activeTimer = setTimeout(() => { activeTimer = null; void closePoll(client); }, msLeft);
+
+  safetyInterval = setInterval(() => {
+    const config = loadConfig();
+    if (!config.activePoll?.closesAt) return;
+    const nowMs = Date.now();
+    const targetMs = new Date(config.activePoll.closesAt).getTime();
+    if (nowMs >= targetMs) {
+      logger.warn({ diffSec: Math.floor((nowMs - targetMs) / 1000) }, "Safety-net: sondaggio scaduto rilevato, avvio chiusura");
+      void closePoll(client);
+    }
+  }, 30_000);
 }
 
 export function cancelPollTimer(): void {
-  if (activeTimer !== null) { clearTimeout(activeTimer); activeTimer = null; logger.info("Timer sondaggio annullato"); }
+  if (activeTimer !== null) { clearTimeout(activeTimer); activeTimer = null; }
+  if (safetyInterval !== null) { clearInterval(safetyInterval); safetyInterval = null; }
+  logger.info("Timer sondaggio annullato");
 }
 
 const RIMESCOLO_IDX = -1;
@@ -30,6 +55,73 @@ const EMBED_FIELD_MAX = 1000;
 const FIXED_TIE_MESSAGE =
   "⚖️ **Pareggio!** Le missioni {missioni} hanno lo stesso numero di voti.\n" +
   "⏳ Attendete un **Co-Capo** per il verdetto finale.";
+
+const RIMESCOLO_NAMES = ["rimescolo.jpeg", "rimescolo.png", "rimescolo.webp"];
+const RIMESCOLO_ATTACHMENT_BASENAME = "rimescolo_img";
+
+function findRimescoloFileRuntime(): string | null {
+  const fallbacks: string[] = [];
+  if (process.cwd()) fallbacks.push(resolve(process.cwd(), "assets"));
+  try {
+    const here = fileURLToPath(import.meta.url);
+    fallbacks.push(resolve(dirname(here), "..", "..", "assets"));
+  } catch {}
+  if (process.env["HERMES_ASSETS_DIR"]) fallbacks.push(resolve(process.env["HERMES_ASSETS_DIR"]));
+
+  for (const assetsDir of fallbacks) {
+    for (const name of RIMESCOLO_NAMES) {
+      const p = join(assetsDir, name);
+      if (existsSync(p)) return p;
+    }
+  }
+  return null;
+}
+
+let _rimescoloCachedPath: string | null | undefined = undefined;
+function getRimescoloPath(): string | null {
+  if (_rimescoloCachedPath !== undefined) return _rimescoloCachedPath;
+  _rimescoloCachedPath = findRimescoloFileRuntime();
+  if (_rimescoloCachedPath) {
+    logger.info({ path: _rimescoloCachedPath }, "✅ Immagine rimescolo caricata");
+  } else {
+    logger.warn(
+      "⚠️ Immagine rimescolo NON TROVATA in assets/ — alla vittoria rimescolo non ci sarà la foto. " +
+      "Metti un file rimescolo.jpeg / .png / .webp in " + resolve(process.cwd(), "assets")
+    );
+  }
+  return _rimescoloCachedPath;
+}
+
+function getRimescoloExt(): string {
+  const p = getRimescoloPath();
+  return p ? (p.split(".").pop()?.toLowerCase() ?? "jpeg") : "jpeg";
+}
+
+function getRimescoloAttachmentFullName(): string {
+  return `${RIMESCOLO_ATTACHMENT_BASENAME}.${getRimescoloExt()}`;
+}
+
+function getRimescoloAttachmentUrl(): string {
+  return `attachment://${getRimescoloAttachmentFullName()}`;
+}
+
+function hasRimescoloImage(): boolean {
+  return !!getRimescoloPath();
+}
+
+function buildRimescoloAttachment(): AttachmentBuilder | null {
+  const p = getRimescoloPath();
+  if (!p) return null;
+  try {
+    const data = readFileSync(p);
+    const att = new AttachmentBuilder(data, { name: getRimescoloAttachmentFullName() });
+    logger.info({ name: getRimescoloAttachmentFullName(), bytes: data.length }, "📎 Allegato rimescolo creato");
+    return att;
+  } catch (err) {
+    logger.warn({ err, path: p }, "Impossibile caricare immagine rimescolo");
+    return null;
+  }
+}
 
 interface VoteResult {
   winners: number[];
@@ -104,16 +196,41 @@ async function sendTempleSummaries(
   voterMap: Map<string, string>,
   pollChannelId: string,
   resultText: string,
-  winnerImageUrl?: string
+  winnerImageUrl?: string,
+  extraFiles?: AttachmentBuilder[]
 ): Promise<void> {
   logger.info("Avvio riepilogo templi...");
 
-  try {
-    await guild.members.fetch();
-    logger.info({ memberCount: guild.members.cache.size }, "Membri fetchati");
-  } catch (err) {
-    logger.warn({ err }, "Impossibile fetchare i membri — riepilogo templi saltato. Verifica che l'intent GuildMembers sia abilitato nel Developer Portal.");
-    return;
+  // Ciclo di Retry con Backoff per il fetch dei membri (evita il blocco GatewayRateLimitError)
+  let membersFetched = false;
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (!membersFetched && attempts < maxAttempts) {
+    try {
+      attempts++;
+      logger.info({ attempt: attempts }, "Tentativo di fetch dei membri della gilda...");
+      await guild.members.fetch();
+      membersFetched = true;
+      logger.info({ memberCount: guild.members.cache.size }, "✅ Membri fetchati con successo");
+    } catch (err: any) {
+      if (err.name === "GatewayRateLimitError" || err.message?.includes("rate limited")) {
+        // Estrae il tempo di retry fornito da Discord (in secondi) o imposta 2.5s di default
+        const retryAfter = err.data?.retry_after ?? 2.5;
+        const waitTime = (retryAfter * 1000) + 200; 
+        logger.warn({ waitTime, attempt: attempts }, `Rate limit rilevato dall'Opcode 8. Attesa in corso...`);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+      } else {
+        logger.error({ err }, `Errore imprevisto al tentativo ${attempts} di fetch membri`);
+        if (attempts >= maxAttempts) break;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+  }
+
+  // Se dopo 3 tentativi fallisce, non facciamo "return" ma proviamo a usare la cache locale esistente
+  if (!membersFetched) {
+    logger.warn({ cacheSize: guild.members.cache.size }, "⚠️ Fetch fallito definitivamente. Tento il calcolo templi usando la cache parziale dei membri.");
   }
 
   const config = loadConfig();
@@ -194,7 +311,9 @@ async function sendTempleSummaries(
     }
 
     try {
-      await templeChannel.send({ embeds: [embed] });
+      const payload: MessageCreateOptions = { embeds: [embed] };
+      if (extraFiles?.length) payload.files = extraFiles;
+      await templeChannel.send(payload);
       logger.info({ role: role.name, channel: templeChannel.name, voted: voted.length, notVoted: notVoted.length }, "Riepilogo inviato");
     } catch (err) {
       logger.warn({ err, role: role.name, channel: templeChannel.name }, "Impossibile inviare riepilogo nel canale tempio — controlla i permessi del bot");
@@ -208,7 +327,11 @@ async function sendTempleSummaries(
   }
 }
 
+
 export async function closePoll(client: Client): Promise<void> {
+  if (closeInProgress) { logger.debug("closePoll già in esecuzione — salto"); return; }
+  closeInProgress = true;
+  try {
   const config = loadConfig();
   const poll = config.activePoll;
   if (!poll) { logger.warn("closePoll chiamato ma nessun sondaggio attivo"); return; }
@@ -233,6 +356,20 @@ export async function closePoll(client: Client): Promise<void> {
     resultText = messages.nessunVoto;
   } else if (wasRimescolo) {
     resultText = `🔀 **Il clan ha votato per il Rimescolo!** Ricordati di rimescolare le missioni manualmente nel gioco, poi pubblica un nuovo sondaggio.`;
+    const hasImg = hasRimescoloImage();
+    logger.info(
+      {
+        wasRimescolo,
+        hasImage: hasImg,
+        imagePath: getRimescoloPath(),
+        attachmentName: hasImg ? getRimescoloAttachmentFullName() : null,
+        attachmentUrl: hasImg ? getRimescoloAttachmentUrl() : null,
+      },
+      "🎯 Vincitore RIMESCOLO — stato foto"
+    );
+    if (hasImg) {
+      winnerImageUrl = getRimescoloAttachmentUrl();
+    }
   } else if (winners.length > 1) {
     const tiedLabels = winners
       .map((i) => (i === RIMESCOLO_IDX ? "🔀 Rimescolo" : (poll.questLabels[i] ?? `Missione ${i + 1}`)))
@@ -259,6 +396,10 @@ export async function closePoll(client: Client): Promise<void> {
     winnerImageUrl = poll.questImageUrls?.[winnerIdx];
     logger.info({ winnerIdx, winnerImageUrl }, "URL immagine vincitore");
   }
+
+  const rimescoloAttachment = wasRimescolo ? buildRimescoloAttachment() : null;
+  const extraFiles: AttachmentBuilder[] = [];
+  if (rimescoloAttachment) extraFiles.push(rimescoloAttachment);
 
   for (const [, guild] of client.guilds.cache) {
     const pollChannel = guild.channels.cache.get(poll.channelId) as TextChannel | undefined;
@@ -312,26 +453,24 @@ export async function closePoll(client: Client): Promise<void> {
             )
           : []),
       ],
+      files: extraFiles.length ? extraFiles : undefined,
       allowedMentions: { roles: roleId ? [roleId] : [] },
     });
 
-    for (const channelId of config.notifyChannelIds) {
-      if (channelId === poll.channelId) continue;
-      const notifyChannel = guild.channels.cache.get(channelId) as TextChannel | undefined;
-      if (!notifyChannel) continue;
-      const notifyEmbed = new EmbedBuilder()
-        .setTitle("🏁 I sondaggi sono chiusi!")
-        .setDescription(resultText)
-        .setColor(EMBED_COLOR)
-        .setTimestamp();
-      await notifyChannel.send({ embeds: [notifyEmbed] }).catch(() => null);
-    }
-
-    await sendTempleSummaries(guild, voterMap, poll.channelId, resultText, winnerImageUrl);
+    await sendTempleSummaries(guild, voterMap, poll.channelId, resultText, winnerImageUrl, extraFiles);
   }
 
   config.activePoll = undefined;
   config.lastPollWasShuffled = wasRimescolo;
   saveConfig(config);
+  cancelPollTimer();
+  if (wasRimescolo) {
+    logger.info("🔀 FLAG ATTIVATO: lastPollWasShuffled = true — nel PROSSIMO sondaggio nasconderò il bottone rimescolo");
+  } else {
+    logger.info("lastPollWasShuffled = false — nel prossimo sondaggio il bottone rimescolo ci sarà");
+  }
   logger.info({ winners, maxVotes, wasRimescolo }, "Sondaggio chiuso");
+  } finally {
+    closeInProgress = false;
+  }
 }

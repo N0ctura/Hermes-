@@ -6,6 +6,7 @@ import {
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  MessageFlags,
   type Guild,
   type GuildMember,
   type Role,
@@ -365,11 +366,11 @@ function parseView(value: string): FamilyView {
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   const guild = interaction.guild;
   if (!guild) {
-    await interaction.reply({ content: "❌ Questo comando funziona solo in un server.", ephemeral: true });
+    await interaction.reply({ content: "❌ Questo comando funziona solo in un server.", flags: "Ephemeral" });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: "Ephemeral" });
 
   try {
     await guild.members.fetch();

@@ -74,8 +74,8 @@ function formatUptime(s: number) {
 
 /* Default card templates */
 const DEFAULT_WELCOME_CARD: CardConfig = {
-    width: 1100,
-    height: 500,
+    width: 1440,
+    height: 720,
     layers: [
         {
             id: uid(),
@@ -83,8 +83,9 @@ const DEFAULT_WELCOME_CARD: CardConfig = {
             visible: true,
             x: 0,
             y: 0,
-            width: 1100,
-            height: 500,
+            width: 1440,
+            height: 720,
+            url: "/assets/benvenutocelestial.png",
             color: "#1a1b1e",
             borderWidth: 0,
         },
@@ -92,24 +93,24 @@ const DEFAULT_WELCOME_CARD: CardConfig = {
             id: uid(),
             type: "avatar",
             visible: true,
-            x: 80,
-            y: 130,
-            width: 240,
-            height: 240,
-            borderRadius: 120,
-            borderWidth: 6,
+            x: 116,
+            y: 203,
+            width: 314,
+            height: 314,
+            borderRadius: 157,
+            borderWidth: 8,
             borderColor: "#5865F2",
         },
         {
             id: uid(),
             type: "text",
             visible: true,
-            x: 380,
-            y: 165,
-            width: 660,
-            height: 60,
+            x: 470,
+            y: 250,
+            width: 900,
+            height: 80,
             text: "Benvenuto/a {USERNAME}!",
-            fontSize: 44,
+            fontSize: 60,
             fontWeight: "bold",
             color: "#ffffff",
             textAlign: "left",
@@ -118,21 +119,21 @@ const DEFAULT_WELCOME_CARD: CardConfig = {
             id: uid(),
             type: "text",
             visible: true,
-            x: 380,
-            y: 240,
-            width: 660,
-            height: 40,
+            x: 470,
+            y: 350,
+            width: 900,
+            height: 54,
             text: "Ora siamo in {MEMBER_COUNT} membri 🔥",
-            fontSize: 24,
-            color: "#a5adbb",
+            fontSize: 32,
+            color: "#d4d9e2",
             textAlign: "left",
         },
     ],
 };
 
 const DEFAULT_LEAVE_CARD: CardConfig = {
-    width: 1100,
-    height: 500,
+    width: 1440,
+    height: 720,
     layers: [
         {
             id: uid(),
@@ -140,33 +141,35 @@ const DEFAULT_LEAVE_CARD: CardConfig = {
             visible: true,
             x: 0,
             y: 0,
-            width: 1100,
-            height: 500,
+            width: 1440,
+            height: 720,
+            url: "/assets/arrivedercicelestial.png",
             color: "#1a1b1e",
             borderWidth: 0,
+            grayscale: false,
         },
         {
             id: uid(),
             type: "avatar",
             visible: true,
-            x: 80,
-            y: 130,
-            width: 240,
-            height: 240,
-            borderRadius: 120,
-            borderWidth: 6,
+            x: 116,
+            y: 203,
+            width: 314,
+            height: 314,
+            borderRadius: 157,
+            borderWidth: 8,
             borderColor: "#ed4245",
         },
         {
             id: uid(),
             type: "text",
             visible: true,
-            x: 380,
-            y: 165,
-            width: 660,
-            height: 60,
+            x: 470,
+            y: 250,
+            width: 900,
+            height: 80,
             text: "Arrivederci {USERNAME}",
-            fontSize: 44,
+            fontSize: 60,
             fontWeight: "bold",
             color: "#ffffff",
             textAlign: "left",
@@ -175,13 +178,13 @@ const DEFAULT_LEAVE_CARD: CardConfig = {
             id: uid(),
             type: "text",
             visible: true,
-            x: 380,
-            y: 240,
-            width: 660,
-            height: 40,
+            x: 470,
+            y: 350,
+            width: 900,
+            height: 54,
             text: "Il clan ti ricorderà ❤️",
-            fontSize: 24,
-            color: "#a5adbb",
+            fontSize: 32,
+            color: "#d4d9e2",
             textAlign: "left",
         },
     ],
@@ -201,6 +204,11 @@ async function apiCall<T = any>(url: string, init?: RequestInit): Promise<T> {
             ...(init?.headers || {}),
         },
     });
+    if (res.status === 401) {
+        localStorage.removeItem(AUTH_KEY);
+        localStorage.removeItem(AUTH_META);
+        window.dispatchEvent(new Event("hermes-logout"));
+    }
     if (!res.ok) {
         let msg = `HTTP ${res.status}`;
         try {
@@ -258,8 +266,9 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
         if (!ctx) return;
         canvas.width = card.width * dpr;
         canvas.height = card.height * dpr;
-        canvas.style.width = `${card.width}px`;
-        canvas.style.height = `${card.height}px`;
+        // Non impostiamo canvas.style.width/height in px fissi: lo fa il CSS
+        // (width 100% + aspectRatio) cosi' il canvas resta responsive e non
+        // si "schiaccia" quando il contenitore e' piu' stretto di card.width.
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, card.width, card.height);
 
@@ -280,64 +289,108 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
             ctx.closePath();
         };
 
+        const applyGrayscaleArea = (x: number, y: number, w: number, h: number) => {
+            try {
+                const imgData = ctx.getImageData(x, y, w, h);
+                const data = imgData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const g = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    data[i] = g;
+                    data[i + 1] = g;
+                    data[i + 2] = g;
+                }
+                ctx.putImageData(imgData, x, y);
+            } catch {
+                /* empty */
+            }
+        };
+
+        function drawImageOrFallback(
+            url: string | undefined,
+            fallbackColor: string | undefined,
+            x: number,
+            y: number,
+            w: number,
+            h: number,
+            layerId: string,
+            needGrayscale: boolean
+        ) {
+            if (url) {
+                try {
+                    const cacheId = `_hermes_${layerId}_${btoa(url).slice(-16)}`;
+                    let img = document.getElementById(cacheId) as HTMLImageElement | null;
+                    if (!img) {
+                        img = new Image();
+                        img.id = cacheId;
+                        img.crossOrigin = "anonymous";
+                        img.onload = () => drawCanvas();
+                        img.style.display = "none";
+                        document.body.appendChild(img);
+                        try {
+                            img.src = url;
+                        } catch {
+                            /* empty */
+                        }
+                    }
+                    if (img && img.complete && img.naturalWidth > 0) {
+                        ctx.drawImage(img, x, y, w, h);
+                        if (needGrayscale) applyGrayscaleArea(x, y, w, h);
+                        return true;
+                    }
+                    ctx.fillStyle = fallbackColor || "#2a2c32";
+                    ctx.fillRect(x, y, w, h);
+                    ctx.fillStyle = "#9aa3b2";
+                    ctx.font = "16px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.fillText(
+                        "Caricamento immagine...",
+                        x + w / 2,
+                        y + h / 2
+                    );
+                    return true;
+                } catch {
+                    /* fallthrough to color */
+                }
+            }
+            ctx.fillStyle = fallbackColor || "#1a1b1e";
+            ctx.fillRect(x, y, w, h);
+            return false;
+        }
+
         for (const layer of card.layers) {
             if (!layer.visible) continue;
             ctx.save();
-            if (layer.type === "background") {
-                ctx.fillStyle = layer.color || "#1a1b1e";
-                ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
-            } else if (layer.type === "avatar" || layer.type === "image") {
+            if (layer.type === "background" || layer.type === "image" || layer.type === "avatar") {
                 const url = layer.type === "avatar" ? PREVIEW_AVATAR : layer.url;
                 const radius = layer.borderRadius ?? 0;
+                const fallbackColor =
+                    layer.type === "avatar" ? "#2a2c32" : layer.color;
                 drawRoundedRect(layer.x, layer.y, layer.width, layer.height, radius);
                 ctx.clip();
-                if (url) {
-                    try {
-                        const img = document.getElementById(
-                            `_hermes_${layer.id}_${btoa(url).slice(-16)}`
-                        ) as HTMLImageElement | null;
-                        let i = img;
-                        if (!i) {
-                            i = new Image();
-                            i.id = `_hermes_${layer.id}_${btoa(url).slice(-16)}`;
-                            i.crossOrigin = "anonymous";
-                            i.onload = () => drawCanvas();
-                            i.style.display = "none";
-                            document.body.appendChild(i);
-                            try {
-                                i.src = url;
-                            } catch {
-                                /* empty */
-                            }
-                        }
-                        if (i && i.complete && i.naturalWidth > 0) {
-                            ctx.drawImage(i, layer.x, layer.y, layer.width, layer.height);
-                        } else {
-                            ctx.fillStyle = "#2a2c32";
-                            ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
-                            ctx.fillStyle = "#9aa3b2";
-                            ctx.font = "16px sans-serif";
-                            ctx.textAlign = "center";
-                            ctx.fillText(
-                                "Caricamento immagine...",
-                                layer.x + layer.width / 2,
-                                layer.y + layer.height / 2
-                            );
-                        }
-                    } catch {
-                        ctx.fillStyle = "#2a2c32";
-                        ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
-                    }
-                } else {
-                    ctx.fillStyle = "#2a2c32";
-                    ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
-                }
+                drawImageOrFallback(
+                    url,
+                    fallbackColor,
+                    layer.x,
+                    layer.y,
+                    layer.width,
+                    layer.height,
+                    layer.id,
+                    type === "leave" || !!layer.grayscale
+                );
                 ctx.restore();
                 ctx.save();
                 if ((layer.borderWidth ?? 0) > 0) {
                     ctx.strokeStyle = layer.borderColor || "#5865F2";
                     ctx.lineWidth = layer.borderWidth ?? 0;
-                    drawRoundedRect(layer.x, layer.y, layer.width, layer.height, radius);
+                    const inset = (layer.borderWidth ?? 0) / 2;
+                    const innerR = Math.max(0, radius - inset);
+                    drawRoundedRect(
+                        layer.x + inset,
+                        layer.y + inset,
+                        layer.width - (layer.borderWidth ?? 0),
+                        layer.height - (layer.borderWidth ?? 0),
+                        innerR
+                    );
                     ctx.stroke();
                 }
             } else if (layer.type === "text") {
@@ -376,10 +429,13 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
         const rect = wrap.getBoundingClientRect();
         const canvas = wrap.querySelector("canvas") as HTMLCanvasElement | null;
         const cRect = canvas?.getBoundingClientRect() || rect;
-        scaleRef.current = canvas ? canvas.width / (window.devicePixelRatio || 1) / cRect.width : 1;
+        const dpr = window.devicePixelRatio || 1;
+        const scaleX = canvas ? canvas.width / dpr / cRect.width : 1;
+        const scaleY = canvas ? canvas.height / dpr / cRect.height : 1;
+        scaleRef.current = scaleX;
         return {
-            x: (e.clientX - cRect.left) * scaleRef.current,
-            y: (e.clientY - cRect.top) * scaleRef.current,
+            x: (e.clientX - cRect.left) * scaleX,
+            y: (e.clientY - cRect.top) * scaleY,
         };
     };
 
@@ -546,7 +602,9 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                                 }
                             }}
                             style={{
-                                maxWidth: "100%",
+                                width: "100%",
+                                maxWidth: card.width,
+                                aspectRatio: `${card.width} / ${card.height}`,
                                 height: "auto",
                                 display: "block",
                                 background: "#000",
@@ -942,6 +1000,10 @@ export default function App() {
             if (localStorage.getItem(AUTH_KEY)) setAuthed("yes");
             else setAuthed("no");
         })();
+
+        const onLogout = () => setAuthed("no");
+        window.addEventListener("hermes-logout", onLogout);
+        return () => window.removeEventListener("hermes-logout", onLogout);
     }, []);
 
     const handleLogin = async (pwd: string) => {

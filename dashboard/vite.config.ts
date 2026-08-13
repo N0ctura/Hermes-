@@ -16,6 +16,7 @@ export default defineConfig(() => {
       port: 5173,
       proxy: {
         "/api": "http://localhost:3000",
+        "/assets": "http://localhost:3000",
       },
       hmr: process.env.DISABLE_HMR !== "true",
       watch: process.env.DISABLE_HMR === "true" ? null : {},

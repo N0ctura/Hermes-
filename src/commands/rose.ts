@@ -8,6 +8,7 @@ import {
   PermissionFlagsBits,
   ChannelType,
   AttachmentBuilder,
+  MessageFlags,
   type TextChannel,
   type Message,
   type ButtonInteraction,
@@ -100,7 +101,7 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: "Ephemeral" });
 
   const guild = interaction.guild;
   if (!guild) {
@@ -171,7 +172,7 @@ export async function handleButtonInteraction(interaction: ButtonInteraction): P
   const lobby = config.activeRoseLobby;
 
   if (!lobby || lobby.messageId !== interaction.message.id) {
-    await interaction.reply({ content: "❌ Questa lobby non è più attiva.", ephemeral: true });
+    await interaction.reply({ content: "❌ Questa lobby non è più attiva.", flags: "Ephemeral" });
     return;
   }
 
@@ -186,34 +187,34 @@ export async function handleButtonInteraction(interaction: ButtonInteraction): P
     const existingRemovedIdx = lobby.removedParticipants.findIndex((p) => p.userId === userId);
 
     if (existingParticipantIdx !== -1) {
-      await interaction.reply({ content: "❌ Sei già tra i partecipanti!", ephemeral: true });
+      await interaction.reply({ content: "❌ Sei già tra i partecipanti!", flags: "Ephemeral" });
       return;
     }
 
     if (existingRemovedIdx !== -1) lobby.removedParticipants.splice(existingRemovedIdx, 1);
 
     lobby.participants.push(participant);
-    await interaction.reply({ content: "✅ Ti sei aggiunto ai partecipanti!", ephemeral: true });
+    await interaction.reply({ content: "✅ Ti sei aggiunto ai partecipanti!", flags: "Ephemeral" });
   } else if (interaction.customId === "rose_reserve") {
     const existingReserveIdx = lobby.reserves.findIndex((p) => p.userId === userId);
     const existingRemovedIdx = lobby.removedParticipants.findIndex((p) => p.userId === userId);
 
     if (existingReserveIdx !== -1) {
-      await interaction.reply({ content: "❌ Sei già tra le riserve!", ephemeral: true });
+      await interaction.reply({ content: "❌ Sei già tra le riserve!", flags: "Ephemeral" });
       return;
     }
 
     if (existingRemovedIdx !== -1) lobby.removedParticipants.splice(existingRemovedIdx, 1);
 
     lobby.reserves.push(participant);
-    await interaction.reply({ content: "✅ Ti sei aggiunto alle riserve!", ephemeral: true });
+    await interaction.reply({ content: "✅ Ti sei aggiunto alle riserve!", flags: "Ephemeral" });
   } else if (interaction.customId === "rose_leave") {
     const existingParticipantIdx = lobby.participants.findIndex((p) => p.userId === userId);
     const existingReserveIdx = lobby.reserves.findIndex((p) => p.userId === userId);
     const existingRemovedIdx = lobby.removedParticipants.findIndex((p) => p.userId === userId);
 
     if (existingParticipantIdx === -1 && existingReserveIdx === -1 && existingRemovedIdx === -1) {
-      await interaction.reply({ content: "❌ Non sei nella lista dei partecipanti o delle riserve!", ephemeral: true });
+      await interaction.reply({ content: "❌ Non sei nella lista dei partecipanti o delle riserve!", flags: "Ephemeral" });
       return;
     }
 
@@ -221,7 +222,7 @@ export async function handleButtonInteraction(interaction: ButtonInteraction): P
     if (existingReserveIdx !== -1) lobby.reserves.splice(existingReserveIdx, 1);
     if (existingRemovedIdx === -1) lobby.removedParticipants.push(participant);
 
-    await interaction.reply({ content: "❌ Ti sei rimosso dalla partecipazione!", ephemeral: true });
+    await interaction.reply({ content: "❌ Ti sei rimosso dalla partecipazione!", flags: "Ephemeral" });
   }
 
   config.activeRoseLobby = lobby;

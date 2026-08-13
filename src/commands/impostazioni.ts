@@ -14,6 +14,7 @@ import {
   RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  MessageFlags,
   type TextChannel,
 } from "discord.js";
 import { logger } from "../utils/logger.js";
@@ -181,7 +182,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       .setColor(0x8b0000)
       .setFooter({ text: "Solo gli admin possono usare questo comando" });
 
-    await interaction.reply({ embeds: [embed], components: [pollSelectRow], ephemeral: true });
+    await interaction.reply({ embeds: [embed], components: [pollSelectRow], flags: MessageFlags.Ephemeral });
 
     let step = 1;
 
@@ -192,6 +193,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     });
 
     collector.on("collect", async (i) => {
+      try {
       if (i.isChannelSelectMenu()) {
         if (i.customId === "select_poll_channel" && step === 1) {
           config.pollChannelId = i.values[0] ?? null;
@@ -328,10 +330,44 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
           try { await interaction.editReply({ embeds: [buildStep6Embed()], components: [buildMessageButtons()] }); } catch { /* ignorato */ }
         }
       }
+      } catch (err: any) {
+        logger.warn({ err, step, customId: i.customId }, "Errore durante collect impostazioni");
+        const code = err?.code ?? err?.status ?? 0;
+        if (code === 10062) {
+          collector.stop("unknown_interaction");
+          try {
+            await interaction.editReply({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle("⚠️ Interazione scaduta")
+                  .setDescription("L'interazione non è più valida. Usa `/impostazioni` per ricominciare.")
+                  .setColor(0xffaa00),
+              ],
+              components: [],
+            });
+          } catch { /* ignorato */ }
+        } else {
+          try {
+            await i.deferUpdate({}).catch(() => null);
+          } catch { /* ignorato */ }
+          try {
+            await interaction.editReply({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle("❌ Errore")
+                  .setDescription("Si è verificato un errore durante la configurazione. Usa `/impostazioni` per ricominciare.")
+                  .setColor(0xed4245),
+              ],
+              components: [],
+            });
+            collector.stop("error");
+          } catch { /* ignorato */ }
+        }
+      }
     });
 
     collector.on("end", async (_, reason) => {
-      if (reason !== "done") {
+      if (reason !== "done" && reason !== "unknown_interaction" && reason !== "error") {
         try {
           await interaction.editReply({
             embeds: [
@@ -353,7 +389,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
           content: "❌ Si è verificato un errore. Riprova più tardi.",
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       } else {
         await interaction.editReply({

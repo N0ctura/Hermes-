@@ -22,16 +22,16 @@ try {
 
 export function replaceVariables(text: string, member: GuildMember): string {
   return text
-    .replace(/{user}/g, member.toString())
-    .replace(/{username}/g, member.user.username)
-    .replace(/{guild}/g, member.guild.name)
-    .replace(/{memberCount}/g, member.guild.memberCount.toString());
+    .replace(/{user}/gi, member.toString())
+    .replace(/{username}/gi, member.user.username)
+    .replace(/{guild}/gi, member.guild.name)
+    .replace(/{memberCount}/gi, member.guild.memberCount.toString());
 }
 
 export function getDefaultWelcomeCard(): CardConfig {
   return {
-    width: 800,
-    height: 400,
+    width: 1440,
+    height: 720,
     layers: [
       {
         id: "bg",
@@ -39,66 +39,116 @@ export function getDefaultWelcomeCard(): CardConfig {
         visible: true,
         x: 0,
         y: 0,
-        width: 800,
-        height: 400,
-        url: ""
+        width: 1440,
+        height: 720,
+        url: "/assets/benvenutocelestial.png",
+        color: "#1a1b1e",
+        borderWidth: 0,
       },
       {
         id: "avatar",
         type: "avatar",
         visible: true,
-        x: 320,
-        y: 50,
-        width: 160,
-        height: 160,
-        borderWidth: 4,
-        borderColor: "#ffffff",
-        borderRadius: 50
+        x: 116,
+        y: 203,
+        width: 314,
+        height: 314,
+        borderWidth: 8,
+        borderColor: "#5865F2",
+        borderRadius: 157,
       },
       {
         id: "title",
         type: "text",
         visible: true,
-        x: 400,
+        x: 470,
         y: 250,
-        width: 800,
-        height: 50,
+        width: 900,
+        height: 80,
         text: "Benvenuto {username}!",
-        fontSize: 36,
+        fontSize: 60,
         fontWeight: "bold",
         color: "#ffffff",
-        textAlign: "center"
+        textAlign: "left",
       },
       {
         id: "subtitle",
         type: "text",
         visible: true,
-        x: 400,
-        y: 300,
-        width: 800,
-        height: 40,
-        text: "Sei il {memberCount}° membro di {guild}!",
-        fontSize: 24,
+        x: 470,
+        y: 350,
+        width: 900,
+        height: 54,
+        text: "Ora siamo in {memberCount} membri 🔥",
+        fontSize: 32,
         fontWeight: "normal",
-        color: "#ffffff",
-        textAlign: "center"
-      }
-    ]
+        color: "#d4d9e2",
+        textAlign: "left",
+      },
+    ],
   };
 }
 
 export function getDefaultLeaveCard(): CardConfig {
-  const defaultCard = getDefaultWelcomeCard();
-  defaultCard.layers.forEach(layer => {
-    if (layer.type === "background") {
-      layer.grayscale = true;
-    }
-  });
-  const titleLayer = defaultCard.layers.find(l => l.id === "title");
-  if (titleLayer) titleLayer.text = "Arrivederci {username}!";
-  const subtitleLayer = defaultCard.layers.find(l => l.id === "subtitle");
-  if (subtitleLayer) subtitleLayer.text = "Ci mancherai!";
-  return defaultCard;
+  return {
+    width: 1440,
+    height: 720,
+    layers: [
+      {
+        id: "bg",
+        type: "background",
+        visible: true,
+        x: 0,
+        y: 0,
+        width: 1440,
+        height: 720,
+        url: "/assets/arrivedercicelestial.png",
+        color: "#1a1b1e",
+        borderWidth: 0,
+        grayscale: false,
+      },
+      {
+        id: "avatar",
+        type: "avatar",
+        visible: true,
+        x: 116,
+        y: 203,
+        width: 314,
+        height: 314,
+        borderWidth: 8,
+        borderColor: "#ed4245",
+        borderRadius: 157,
+      },
+      {
+        id: "title",
+        type: "text",
+        visible: true,
+        x: 470,
+        y: 250,
+        width: 900,
+        height: 80,
+        text: "Arrivederci {username}!",
+        fontSize: 60,
+        fontWeight: "bold",
+        color: "#ffffff",
+        textAlign: "left",
+      },
+      {
+        id: "subtitle",
+        type: "text",
+        visible: true,
+        x: 470,
+        y: 350,
+        width: 900,
+        height: 54,
+        text: "Il clan ti ricorderà ❤️",
+        fontSize: 32,
+        fontWeight: "normal",
+        color: "#d4d9e2",
+        textAlign: "left",
+      },
+    ],
+  };
 }
 
 async function renderCard(
@@ -110,8 +160,57 @@ async function renderCard(
   const canvas = createCanvas(config.width, config.height);
   const ctx = canvas.getContext("2d");
 
-  ctx.fillStyle = "#202225";
+  ctx.fillStyle = config.layers[0]?.color || "#202225";
   ctx.fillRect(0, 0, config.width, config.height);
+
+  function roundRectPath(x: number, y: number, w: number, h: number, r: number) {
+    const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  }
+
+  function applyGrayscale(x: number, y: number, w: number, h: number) {
+    try {
+      const imageData = ctx.getImageData(x, y, w, h);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        data[i] = gray;
+        data[i + 1] = gray;
+        data[i + 2] = gray;
+      }
+      ctx.putImageData(imageData, x, y);
+    } catch {
+      /* getImageData può fallire in casi limiti; ignoriamo */
+    }
+  }
+
+  function drawFallbackGradient(x: number, y: number, w: number, h: number, fallbackColor?: string) {
+    if (fallbackColor) {
+      ctx.fillStyle = fallbackColor;
+      ctx.fillRect(x, y, w, h);
+      return;
+    }
+    const gradient = ctx.createLinearGradient(x, y, x + w, y + h);
+    if (isLeave) {
+      gradient.addColorStop(0, "#2c2f33");
+      gradient.addColorStop(1, "#23272a");
+    } else {
+      gradient.addColorStop(0, "#5865F2");
+      gradient.addColorStop(1, "#57F287");
+    }
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, w, h);
+  }
 
   for (const layer of config.layers) {
     if (!layer.visible) continue;
@@ -120,7 +219,13 @@ async function renderCard(
 
     switch (layer.type) {
       case "background":
-      case "image":
+      case "image": {
+        const radius = layer.borderRadius ?? 0;
+        if (radius > 0) {
+          roundRectPath(layer.x, layer.y, layer.width, layer.height, radius);
+          ctx.clip();
+        }
+
         if (layer.url) {
           try {
             let img: any;
@@ -129,16 +234,17 @@ async function renderCard(
               const base64Data = layer.url.split(",")[1];
               const buffer = Buffer.from(base64Data, "base64");
               img = await loadImage(buffer);
-            }
-            else if (layer.url.startsWith("/")) {
+            } else if (layer.url.startsWith("/")) {
+              // layer.url è già "/assets/nomefile.png": non dobbiamo
+              // aggiungere di nuovo "assets" o otteniamo assets/assets/...
               const filename = layer.url.substring(1);
-              const localPath = path.join(process.cwd(), "assets", filename);
+              const localPath = path.join(process.cwd(), filename);
               if (fs.existsSync(localPath)) {
                 const buffer = fs.readFileSync(localPath);
                 img = await loadImage(buffer);
               } else {
-                const altFilename = filename.replace("-", " ");
-                const altLocalPath = path.join(process.cwd(), "assets", altFilename);
+                const altFilename = filename.replaceAll("-", " ");
+                const altLocalPath = path.join(process.cwd(), altFilename);
                 if (fs.existsSync(altLocalPath)) {
                   const buffer = fs.readFileSync(altLocalPath);
                   img = await loadImage(buffer);
@@ -146,8 +252,7 @@ async function renderCard(
                   throw new Error("Local file not found");
                 }
               }
-            }
-            else {
+            } else {
               const bgResponse = await fetch(layer.url);
               const bgBuffer = Buffer.from(await bgResponse.arrayBuffer());
               img = await loadImage(bgBuffer);
@@ -156,102 +261,99 @@ async function renderCard(
             ctx.drawImage(img, layer.x, layer.y, layer.width, layer.height);
 
             if (layer.grayscale || isLeave) {
-              const imageData = ctx.getImageData(layer.x, layer.y, layer.width, layer.height);
-              const data = imageData.data;
-              for (let i = 0; i < data.length; i += 4) {
-                const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-                data[i] = gray;
-                data[i + 1] = gray;
-                data[i + 2] = gray;
-              }
-              ctx.putImageData(imageData, layer.x, layer.y);
+              applyGrayscale(layer.x, layer.y, layer.width, layer.height);
             }
           } catch (err) {
-            logger.error({ err, url: layer.url }, "Failed to load background image");
-            const gradient = ctx.createLinearGradient(layer.x, layer.y, layer.x + layer.width, layer.y + layer.height);
-            if (isLeave) {
-              gradient.addColorStop(0, "#2c2f33");
-              gradient.addColorStop(1, "#23272a");
-            } else {
-              gradient.addColorStop(0, "#5865F2");
-              gradient.addColorStop(1, "#57F287");
-            }
-            ctx.fillStyle = gradient;
-            ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+            logger.error({ err, url: layer.url }, "Failed to load background/image layer");
+            drawFallbackGradient(layer.x, layer.y, layer.width, layer.height, layer.color);
           }
         } else {
-          const gradient = ctx.createLinearGradient(layer.x, layer.y, layer.x + layer.width, layer.y + layer.height);
-          if (isLeave) {
-            gradient.addColorStop(0, "#2c2f33");
-            gradient.addColorStop(1, "#23272a");
-          } else {
-            gradient.addColorStop(0, "#5865F2");
-            gradient.addColorStop(1, "#57F287");
-          }
-          ctx.fillStyle = gradient;
-          ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+          drawFallbackGradient(layer.x, layer.y, layer.width, layer.height, layer.color);
+        }
+
+        ctx.restore();
+        ctx.save();
+
+        if (layer.borderWidth && layer.borderWidth > 0) {
+          ctx.strokeStyle = layer.borderColor || "#ffffff";
+          ctx.lineWidth = layer.borderWidth;
+          const inset = layer.borderWidth / 2;
+          roundRectPath(
+            layer.x + inset,
+            layer.y + inset,
+            layer.width - layer.borderWidth,
+            layer.height - layer.borderWidth,
+            Math.max(0, (layer.borderRadius ?? 0) - inset),
+          );
+          ctx.stroke();
         }
         break;
+      }
 
-      case "avatar":
+      case "avatar": {
+        const radius = layer.borderRadius ?? Math.min(layer.width, layer.height) / 2;
+        roundRectPath(layer.x, layer.y, layer.width, layer.height, radius);
+        ctx.clip();
+
         try {
           const avatarUrl = member.user.displayAvatarURL({ extension: "png", size: 256 });
           const avatarResponse = await fetch(avatarUrl);
           const avatarBuffer = Buffer.from(await avatarResponse.arrayBuffer());
           const avatar = await loadImage(avatarBuffer);
-
-          const radius = (layer.borderRadius || 50) * Math.min(layer.width, layer.height) / 200;
-          ctx.beginPath();
-          ctx.arc(layer.x + layer.width / 2, layer.y + layer.height / 2, radius, 0, Math.PI * 2);
-          ctx.closePath();
-          ctx.clip();
-
           ctx.drawImage(avatar, layer.x, layer.y, layer.width, layer.height);
 
-          ctx.restore();
-          ctx.save();
-
-          if (layer.borderWidth && layer.borderWidth > 0) {
-            ctx.strokeStyle = layer.borderColor || "#ffffff";
-            ctx.lineWidth = layer.borderWidth;
-            ctx.beginPath();
-            ctx.arc(layer.x + layer.width / 2, layer.y + layer.height / 2, radius - layer.borderWidth / 2, 0, Math.PI * 2);
-            ctx.closePath();
-            ctx.stroke();
-          }
-
           if (isLeave) {
-            const imageData = ctx.getImageData(layer.x, layer.y, layer.width, layer.height);
-            const data = imageData.data;
-            for (let i = 0; i < data.length; i += 4) {
-              const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-              data[i] = gray;
-              data[i + 1] = gray;
-              data[i + 2] = gray;
-            }
-            ctx.putImageData(imageData, layer.x, layer.y);
+            applyGrayscale(layer.x, layer.y, layer.width, layer.height);
           }
         } catch (err) {
           logger.error({ err }, "Error loading avatar");
+          ctx.fillStyle = "#2a2c32";
+          ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+        }
+
+        ctx.restore();
+        ctx.save();
+
+        if (layer.borderWidth && layer.borderWidth > 0) {
+          ctx.strokeStyle = layer.borderColor || "#ffffff";
+          ctx.lineWidth = layer.borderWidth;
+          const inset = layer.borderWidth / 2;
+          const innerRadius = Math.max(0, radius - inset);
+          roundRectPath(
+            layer.x + inset,
+            layer.y + inset,
+            layer.width - layer.borderWidth,
+            layer.height - layer.borderWidth,
+            innerRadius,
+          );
+          ctx.stroke();
         }
         break;
+      }
 
-      case "text":
+      case "text": {
         ctx.fillStyle = layer.color || "#ffffff";
-        ctx.font = `${layer.fontWeight || "normal"} ${layer.fontSize || 24}px WelcomeFont, Arial, sans-serif`;
-        ctx.textAlign = layer.textAlign || "center";
+        const weight = layer.fontWeight === "bold" ? "bold" : "normal";
+        ctx.font = `${weight} ${layer.fontSize || 24}px WelcomeFont, Arial, sans-serif`;
+        ctx.textAlign = layer.textAlign || "left";
         ctx.textBaseline = "middle";
 
         const processedText = replaceVariables(layer.text || "", member);
+        const fontSize = layer.fontSize || 24;
+        const lineHeight = Math.round(fontSize * 1.3);
+        const lines = processedText.split("\n");
+        const totalH = lines.length * lineHeight;
+        const baseY = layer.y + Math.max(0, (layer.height - totalH) / 2) + lineHeight / 2;
 
-        if (layer.textAlign === "center") {
-          ctx.fillText(processedText, layer.x + layer.width / 2, layer.y + layer.height / 2);
-        } else if (layer.textAlign === "right") {
-          ctx.fillText(processedText, layer.x + layer.width, layer.y + layer.height / 2);
-        } else {
-          ctx.fillText(processedText, layer.x, layer.y + layer.height / 2);
-        }
+        let x = layer.x;
+        if (layer.textAlign === "center") x = layer.x + layer.width / 2;
+        else if (layer.textAlign === "right") x = layer.x + layer.width;
+
+        lines.forEach((ln, idx) => {
+          ctx.fillText(ln, x, baseY + idx * lineHeight);
+        });
         break;
+      }
     }
 
     ctx.restore();
