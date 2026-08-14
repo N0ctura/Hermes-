@@ -15,7 +15,7 @@ import {
   type BotConfig,
 } from "./utils/storage.js";
 import { logger } from "./utils/logger.js";
-import { fetchClanById, fetchClanMembers, fetchClanLog } from "./utils/wolvesville.js";
+import { fetchClanById, fetchClanMembers, fetchClanLog, fetchClanLedger } from "./utils/wolvesville.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -317,26 +317,53 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       return res.status(400).json({ error: "WOLVESVILLE_CLAN_ID non impostato nel .env del bot" });
     }
     try {
-      // Ogni chiamata è isolata: se una fallisce, logghiamo il motivo reale
-      // e rispondiamo comunque con JSON valido (con quel campo vuoto/null)
-      // invece di far fallire l'intera richiesta senza un messaggio chiaro.
       const clan = await fetchClanById(clanId).catch((e) => {
         logger.error({ err: e }, "clan/overview: fetchClanById fallita");
         return null;
       });
       const members = await fetchClanMembers(clanId).catch((e) => {
         logger.error({ err: e }, "clan/overview: fetchClanMembers fallita");
-        throw e; // i membri sono il dato principale: qui vogliamo che l'errore emerga
+        throw e;
       });
       const logs = await fetchClanLog(clanId).catch((e) => {
         logger.error({ err: e }, "clan/overview: fetchClanLog fallita");
         return [];
       });
-      res.json({ clan, members, logs });
+      const ledger = await fetchClanLedger(clanId).catch((e) => {
+        logger.error({ err: e }, "clan/overview: fetchClanLedger fallita");
+        return [];
+      });
+      const cfg = loadConfig();
+      const donations = (cfg.donationHistory ?? []).slice(0, 500);
+      res.json({ clan, members, logs, ledger, donations });
     } catch (e: any) {
       logger.error({ err: e }, "clan/overview: errore generale");
       res.status(500).json({ error: e?.message || "Errore recupero dati clan" });
     }
+  });
+
+  app.get("/api/clan/donations", (_req, res) => {
+    const cfg = loadConfig();
+    const history = cfg.donationHistory ?? [];
+    const totalGold = history.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const donorMap = new Map<string, { username: string; total: number; count: number; lastTime: string }>();
+    for (const d of history) {
+      const key = d.playerId || d.playerUsername;
+      const cur = donorMap.get(key) || { username: d.playerUsername, total: 0, count: 0, lastTime: d.eventTime };
+      cur.total += d.amount || 0;
+      cur.count += 1;
+      if (new Date(d.eventTime).getTime() > new Date(cur.lastTime).getTime()) cur.lastTime = d.eventTime;
+      donorMap.set(key, cur);
+    }
+    const leaderboard = Array.from(donorMap.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 100);
+    res.json({
+      entries: history.slice(0, 500),
+      totalDonated: totalGold,
+      totalCount: history.length,
+      leaderboard,
+    });
   });
 
   /* ===== Deleted/modified logs ===== */

@@ -20,10 +20,12 @@ import {
     Sparkles,
     Tag,
     Trash2,
+    TrendingUp,
     UserPlus,
     UserMinus,
     Volume2,
     ListTodo,
+    List,
     LayoutDashboard,
     Server,
     Eye,
@@ -2069,7 +2071,22 @@ const TabClan: React.FC<{
 }> = ({ data, error, loading, onRefresh }) => {
     const members = data?.members ?? [];
     const logs = data?.logs ?? [];
+    const ledger = data?.ledger ?? [];
+    const donations = data?.donations ?? [];
+
     const coLeaders = members.filter((m) => m.isCoLeader).length;
+    const totalDonated = donations.reduce((s, d) => s + (d.amount || 0), 0);
+
+    const donorMap = new Map<string, { username: string; total: number; count: number; lastTime: string }>();
+    for (const d of donations) {
+        const key = d.playerId || d.playerUsername;
+        const cur = donorMap.get(key) || { username: d.playerUsername, total: 0, count: 0, lastTime: d.eventTime };
+        cur.total += d.amount || 0;
+        cur.count += 1;
+        if (new Date(d.eventTime).getTime() > new Date(cur.lastTime).getTime()) cur.lastTime = d.eventTime;
+        donorMap.set(key, cur);
+    }
+    const leaderboard = Array.from(donorMap.values()).sort((a, b) => b.total - a.total);
 
     return (
         <div className="space-y-5 animate-fade-in">
@@ -2078,8 +2095,8 @@ const TabClan: React.FC<{
                     <h1 className="text-2xl font-black tracking-tight">Clan Wolvesville</h1>
                     <p className="text-sm text-neutral-400 mt-1">
                         {data?.clan?.name
-                            ? `${data.clan.name}${data.clan.tag ? ` [${data.clan.tag}]` : ""} — elenco membri e log di attività letti dall'API di Wolvesville.`
-                            : "Elenco membri e log di attività del clan, letti dall'API ufficiale di Wolvesville."}
+                            ? `${data.clan.name}${data.clan.tag ? ` [${data.clan.tag}]` : ""} — panoramica membri e tracciamento donazioni.`
+                            : "Panoramica clan: membri e donazioni tracciate dal ledger di Wolvesville."}
                     </p>
                 </div>
                 <button
@@ -2097,18 +2114,106 @@ const TabClan: React.FC<{
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Stat label="Membri" value={String(members.length)} color="indigo" />
                 <Stat label="Co-leader" value={String(coLeaders)} color="amber" />
-                <Stat label="Voci nel log" value={String(logs.length)} color="rose" />
+                <Stat label="Donazioni" value={String(donations.length)} color="emerald" />
+                <Stat label="Totale oro donato" value={totalDonated.toLocaleString("it-IT")} color="yellow" />
             </div>
 
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-800">
-                    <h3 className="text-sm font-bold">Membri del clan</h3>
+                <div className="px-5 py-3 border-b border-neutral-800 flex items-center justify-between gap-3 flex-wrap">
+                    <h3 className="text-sm font-bold flex items-center gap-2">
+                        <Coins className="w-4 h-4 text-amber-400" />
+                        Classifica donatori
+                    </h3>
+                    <span className="text-[11px] text-neutral-500">Basata sullo storico salvato dal bot (max 1000 entry)</span>
                 </div>
+                {leaderboard.length === 0 ? (
+                    <EmptyState
+                        compact
+                        icon={Coins}
+                        title="Nessuna donazione registrata"
+                        text="Il tracker salva automaticamente ogni donazione del ledger Wolvesville. Appena uno del clan dona, qui apparirà la classifica."
+                    />
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="text-left text-[11px] uppercase tracking-wider text-neutral-500 border-b border-neutral-800">
+                                    <th className="px-4 py-2.5 font-semibold w-12">#</th>
+                                    <th className="px-4 py-2.5 font-semibold">Giocatore</th>
+                                    <th className="px-4 py-2.5 font-semibold">Oro</th>
+                                    <th className="px-4 py-2.5 font-semibold">Volte</th>
+                                    <th className="px-4 py-2.5 font-semibold">Ultima</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {leaderboard.map((r, i) => (
+                                    <tr key={r.username + i} className="border-b border-neutral-800/60 last:border-0 hover:bg-neutral-900/60">
+                                        <td className="px-4 py-2.5 font-black text-neutral-500">{i + 1}</td>
+                                        <td className="px-4 py-2.5 font-semibold">{r.username}</td>
+                                        <td className="px-4 py-2.5 text-amber-300 font-bold">{r.total.toLocaleString("it-IT")}</td>
+                                        <td className="px-4 py-2.5 text-neutral-300">{r.count}</td>
+                                        <td className="px-4 py-2.5 text-neutral-500 text-xs">
+                                            {new Date(r.lastTime).toLocaleString("it-IT")}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-neutral-800 flex items-center justify-between gap-3 flex-wrap">
+                    <h3 className="text-sm font-bold flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-emerald-400" />
+                        Storico donazioni
+                    </h3>
+                    <span className="text-[11px] text-neutral-500">
+                        Solo le voci del ledger con tipo donazione
+                    </span>
+                </div>
+                {donations.length === 0 ? (
+                    <EmptyState
+                        compact
+                        icon={Coins}
+                        title="Nessuna donazione tracciata"
+                        text="Devono ancora essere registrate transazioni di donazione (DONATE) nel clan ledger Wolvesville."
+                    />
+                ) : (
+                    <div className="divide-y divide-neutral-800 max-h-[520px] overflow-y-auto">
+                        {donations.map((d) => (
+                            <div key={d.id} className="p-4 flex items-center gap-3 flex-wrap">
+                                <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                                    Donazione
+                                </span>
+                                <span className="font-semibold text-sm truncate">{d.playerUsername}</span>
+                                <span className="text-amber-300 font-bold text-sm">
+                                    {d.amount.toLocaleString("it-IT")} monete
+                                </span>
+                                <span className="flex-1" />
+                                <span className="text-[11px] text-neutral-500 shrink-0">
+                                    {new Date(d.eventTime).toLocaleString("it-IT")}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <details className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden group">
+                <summary className="px-5 py-3 border-b border-neutral-800 text-sm font-bold cursor-pointer select-none list-none flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-indigo-400" />
+                        Membri del clan
+                    </span>
+                    <ChevronDown className="w-4 h-4 text-neutral-500 group-open:rotate-180 transition-transform" />
+                </summary>
                 {members.length === 0 ? (
-                    <EmptyState compact icon={Users} title="Nessun membro" text="Nessun membro trovato, oppure i dati non sono ancora stati caricati." />
+                    <EmptyState compact icon={Users} title="Nessun membro" text="Nessun membro trovato." />
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -2140,15 +2245,18 @@ const TabClan: React.FC<{
                         </table>
                     </div>
                 )}
-            </div>
+            </details>
 
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-800 flex items-center justify-between">
-                    <h3 className="text-sm font-bold">Log del clan</h3>
-                    <span className="text-[11px] text-neutral-500">L'API di Wolvesville espone solo l'evento più recente, non uno storico completo</span>
-                </div>
+            <details className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden group">
+                <summary className="px-5 py-3 border-b border-neutral-800 text-sm font-bold cursor-pointer select-none list-none flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                        <List className="w-4 h-4 text-rose-400" />
+                        Log generici del clan
+                    </span>
+                    <ChevronDown className="w-4 h-4 text-neutral-500 group-open:rotate-180 transition-transform" />
+                </summary>
                 {logs.length === 0 ? (
-                    <EmptyState compact icon={Coins} title="Nessuna voce di log" text="Nessuna attività recente disponibile dall'API del clan." />
+                    <EmptyState compact icon={List} title="Nessuna voce" text="L'API di Wolvesville espone solo l'evento più recente." />
                 ) : (
                     <div className="divide-y divide-neutral-800">
                         {logs.map((l, i) => (
@@ -2164,7 +2272,57 @@ const TabClan: React.FC<{
                         ))}
                     </div>
                 )}
-            </div>
+            </details>
+
+            <details className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden group">
+                <summary className="px-5 py-3 border-b border-neutral-800 text-sm font-bold cursor-pointer select-none list-none flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-violet-400" />
+                        Ledger completo ({ledger.length} transazioni)
+                    </span>
+                    <ChevronDown className="w-4 h-4 text-neutral-500 group-open:rotate-180 transition-transform" />
+                </summary>
+                {ledger.length === 0 ? (
+                    <EmptyState compact icon={Activity} title="Nessun dato" text="Il ledger Wolvesville è ancora vuoto o non leggibile." />
+                ) : (
+                    <div className="divide-y divide-neutral-800 max-h-[520px] overflow-y-auto">
+                        {ledger.map((t) => (
+                            <div key={t.id} className="p-4 flex items-center gap-3 flex-wrap">
+                                <span className={classNames(
+                                    "text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 border",
+                                    (t.type === "DONATE" || t.type === "GOLD_DONATION" || t.type === "GOLD_DEPOSIT")
+                                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                        : (t.gold < 0)
+                                            ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                            : "bg-violet-500/15 text-violet-300 border-violet-500/30"
+                                )}>
+                                    {t.type}
+                                </span>
+                                <span className="font-semibold text-sm truncate">{t.playerUsername || "Sistema"}</span>
+                                {t.gold !== 0 && (
+                                    <span className={classNames(
+                                        "text-sm font-bold",
+                                        t.gold > 0 ? "text-amber-300" : "text-rose-300"
+                                    )}>
+                                        {t.gold > 0 ? "+" : ""}{t.gold.toLocaleString("it-IT")} monete
+                                    </span>
+                                )}
+                                {t.gems !== 0 && (
+                                    <span className={classNames(
+                                        "text-sm font-bold",
+                                        t.gems > 0 ? "text-cyan-300" : "text-rose-300"
+                                    )}>
+                                        {t.gems > 0 ? "+" : ""}{t.gems} gemme
+                                    </span>
+                                )}
+                                {t.comment && <span className="text-sm text-neutral-400 truncate">{t.comment}</span>}
+                                <span className="flex-1" />
+                                <span className="text-[11px] text-neutral-500 shrink-0">{new Date(t.creationTime).toLocaleString("it-IT")}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </details>
         </div>
     );
 };

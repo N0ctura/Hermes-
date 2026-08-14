@@ -183,6 +183,26 @@ export interface RoseLobby {
   createdAt: string;
 }
 
+export interface DonationEntry {
+  id: string;
+  /** Timestamp ISO Wolvesville dell'evento */
+  eventTime: string;
+  /** Timestamp ISO di quando il bot l'ha processato */
+  processedAt: string;
+  /** Player ID Wolvesville */
+  playerId?: string;
+  /** Username Wolvesville */
+  playerUsername: string;
+  /** Importo di oro donato */
+  amount: number;
+  /** Valore raw del campo `type` del ledger (utile per debug futuro) */
+  rawAction: string;
+  /** Eventuale ID messaggio Discord della notifica inviata */
+  notificationMessageId?: string;
+  /** Canale Discord dove è stata mandata la notifica */
+  notificationChannelId?: string;
+}
+
 export interface DonationTrackingConfig {
   /** Abilita/disabilita il polling delle donazioni per l'intero bot. */
   enabled: boolean;
@@ -228,6 +248,7 @@ export interface BotConfig {
   activeRoseLobby?: RoseLobby;
   lastPollWasShuffled?: boolean;
   donationTracking?: DonationTrackingConfig;
+  donationHistory?: DonationEntry[];
 }
 
 const DEFAULT_CONFIG: BotConfig = {
@@ -250,6 +271,7 @@ function normalizeConfig(config: Partial<BotConfig> | null | undefined): BotConf
     ttsConfigs: Array.isArray(config?.ttsConfigs) ? config.ttsConfigs : [],
     logsConfigs: Array.isArray(config?.logsConfigs) ? config.logsConfigs : [],
     deletedModifiedLogs: Array.isArray(config?.deletedModifiedLogs) ? config.deletedModifiedLogs : [],
+    donationHistory: Array.isArray(config?.donationHistory) ? config.donationHistory : [],
     donationTracking: {
       enabled: config?.donationTracking?.enabled ?? false,
       lastProcessedAt: config?.donationTracking?.lastProcessedAt,

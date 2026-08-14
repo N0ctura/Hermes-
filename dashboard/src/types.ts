@@ -95,10 +95,48 @@ export interface WvClanLogEntry {
   comment?: string;
 }
 
+export type ClanGoldTransactionType =
+  | "GOLD_DONATION"
+  | "GOLD_PURCHASED_QUEST_SLOT"
+  | "GOLD_REFUNDED_QUEST_SLOT"
+  | "GOLD_QUEST_PURCHASE"
+  | "GOLD_QUEST_REFUND"
+  | "GOLD_QUEST_REWARD"
+  | "GOLD_WITHDRAW"
+  | "GOLD_DEPOSIT";
+
+export interface ClanGoldTransaction {
+  id: string;
+  gold: number;
+  gems: number;
+  playerId?: string;
+  playerUsername?: string;
+  playerBotId?: string;
+  playerBotOwnerUsername?: string;
+  clanQuestId?: string;
+  type: ClanGoldTransactionType;
+  creationTime: string;
+  comment?: string;
+}
+
+export interface DonationEntry {
+  id: string;
+  eventTime: string;
+  processedAt: string;
+  playerId?: string;
+  playerUsername: string;
+  amount: number;
+  rawAction: string;
+  notificationMessageId?: string;
+  notificationChannelId?: string;
+}
+
 export interface ClanOverviewDto {
   clan: { id: string; name: string; tag?: string; memberCount?: number; maxMemberCount?: number; iconUrl?: string } | null;
   members: WvClanMember[];
   logs: WvClanLogEntry[];
+  ledger: ClanGoldTransaction[];
+  donations: DonationEntry[];
 }
 
 export interface DeletedModifiedLogEntry {

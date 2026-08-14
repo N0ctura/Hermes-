@@ -1,128 +1,139 @@
-import type { Client, TextChannel } from "discord.js";
+import type { Client, Guild, TextChannel } from "discord.js";
 import { EmbedBuilder } from "discord.js";
 import { logger } from "./logger.js";
-import { loadConfig, saveConfig } from "./storage.js";
-import { fetchClanLog, type WvClanLogEntry } from "./wolvesville.js";
-import { normalize } from "./normalize.js";
-import { resolveTempleKeyForMember, resolveTempleRoles, TEMPLE_DEFINITIONS } from "./temples.js";
+import { loadConfig, saveConfig, type DonationEntry } from "./storage.js";
+import { fetchClanLedger, fetchClanMembers, type ClanGoldTransaction, type WvClanMember } from "./wolvesville.js";
+import { resolveNotifyChannelsByTemple, templeKeyFromFlair } from "./temples.js";
 
-const POLL_INTERVAL_MS = 60_000;
-const EMBED_COLOR = 0xf1c40f; // oro
+const POLL_INTERVAL_MS = 20_000;
+const MEMBERS_CACHE_TTL_MS = 10 * 60 * 1000;
+const EMBED_COLOR = 0xf1c40f;
+const HISTORY_MAX_ENTRIES = 1000;
 
-// ⚠️ Segnaposto — va confermato osservando il payload reale (vedi wolvesville.ts).
-// Metti qui il/i valore/i esatto/i che identifica una donazione di monete,
-// per DISTINGUERLA dall'evento XP collegato che la accompagna.
-const DONATION_EVENT_TYPES = ["CLAN_GOLD_DONATED", "GOLD_DONATION"];
+const DONATION_TYPES: ReadonlySet<ClanGoldTransaction["type"]> = new Set([
+  "DONATE",
+  "GOLD_DONATION",
+  "GOLD_DEPOSIT",
+]);
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let pollInFlight = false;
 
-function isDonationEvent(entry: WvClanLogEntry): boolean {
-  // Confronto case-insensitive sul campo `action` (confermato empiricamente,
-  // vedi wolvesville.ts). I valori in DONATION_EVENT_TYPES restano un
-  // segnaposto: non è ancora stata osservata una donazione reale nel log.
-  const rawAction = String(entry.action ?? "").toUpperCase();
-  return DONATION_EVENT_TYPES.some((t) => rawAction === t.toUpperCase());
+let lastMembersFetchAt = 0;
+let cachedMembers: WvClanMember[] = [];
+let cachedMembersById: Map<string, WvClanMember> = new Map();
+
+function isDonation(tx: ClanGoldTransaction): boolean {
+  return DONATION_TYPES.has(tx.type) && typeof tx.gold === "number" && tx.gold > 0;
 }
 
-/**
- * L'API non restituisce un id univoco per entry: lo sintetizziamo per poter
- * deduplicare tra un giro di polling e l'altro.
- */
-function syntheticEntryId(entry: WvClanLogEntry): string {
-  return `${entry.creationTime}|${entry.action}|${entry.playerId ?? ""}|${entry.targetPlayerId ?? ""}`;
-}
-
-function extractDonationAmount(entry: WvClanLogEntry): number | null {
-  // ⚠️ Segnaposto — prova i nomi di campo più plausibili; sostituisci con
-  // quello reale una volta ispezionato il payload.
-  const candidates = ["amount", "goldAmount", "gold", "value"];
-  for (const key of candidates) {
-    const v = entry[key];
-    if (typeof v === "number" && Number.isFinite(v)) return v;
+async function refreshMembersCache(clanId: string, force = false): Promise<Map<string, WvClanMember>> {
+  const now = Date.now();
+  if (!force && cachedMembers.length > 0 && now - lastMembersFetchAt < MEMBERS_CACHE_TTL_MS) {
+    return cachedMembersById;
   }
-  return null;
+  try {
+    const members = await fetchClanMembers(clanId);
+    cachedMembers = members;
+    cachedMembersById = new Map(members.map((m) => [m.playerId, m]));
+    lastMembersFetchAt = now;
+    logger.info({ count: members.length }, "donation-tracker: cache membri Wolvesville aggiornata");
+  } catch (err) {
+    logger.error({ err }, "donation-tracker: aggiornamento cache membri fallito");
+  }
+  return cachedMembersById;
 }
 
-function extractDonorUsername(entry: WvClanLogEntry): string | null {
-  return entry.playerUsername ?? null;
-}
-
-/**
- * Trova il GuildMember Discord corrispondente a uno username Wolvesville,
- * confrontando in modo case/accent-insensitive sia lo username Discord
- * sia il displayName (nickname del server), riusando la stessa funzione
- * normalize() già usata per il match dei nomi canale in debug-templi.ts.
- */
-function findDiscordMemberByWolvesvilleName(client: Client, wvUsername: string) {
-  const target = normalize(wvUsername);
-  if (!target) return null;
+function resolvePrimaryGuild(client: Client): Guild | null {
+  const config = loadConfig();
+  const ids = new Set<string>();
+  for (const id of config.notifyChannelIds ?? []) ids.add(id);
+  if (config.pollChannelId) ids.add(config.pollChannelId);
+  if (config.donationTracking?.fallbackChannelId) ids.add(config.donationTracking.fallbackChannelId);
 
   for (const [, guild] of client.guilds.cache) {
-    const match = guild.members.cache.find(
-      (m) => normalize(m.user.username) === target || normalize(m.displayName) === target
-    );
-    if (match) return match;
+    for (const id of ids) {
+      if (guild.channels.cache.has(id)) return guild;
+    }
   }
-  return null;
+  return client.guilds.cache.first() ?? null;
 }
 
-async function resolveTargetChannel(client: Client, donorMember: ReturnType<typeof findDiscordMemberByWolvesvilleName>) {
+async function resolveDonationChannel(
+  client: Client,
+  templeKey: string | null
+): Promise<{ channel: TextChannel | null; templeResolved: string | null }> {
+  const guild = resolvePrimaryGuild(client);
   const config = loadConfig();
 
-  if (donorMember) {
-    const templeKey = resolveTempleKeyForMember(donorMember);
+  if (guild) {
+    const notifyMap = resolveNotifyChannelsByTemple(guild);
     if (templeKey) {
-      const templeRoles = resolveTempleRoles(donorMember.guild);
-      const templeRole = templeRoles.get(templeKey);
-      const definition = TEMPLE_DEFINITIONS.find((t) => t.key === templeKey);
-      // Il canale del tempio si ricava per nome-canale normalizzato che
-      // combacia con l'alias del tempio — stesso approccio di debug-templi.ts.
-      if (definition) {
-        const channel = donorMember.guild.channels.cache.find(
-          (ch) =>
-            ch.isTextBased() &&
-            !ch.isThread() &&
-            definition.aliases.some((alias) => normalize(ch.name).includes(normalize(alias)))
-        ) as TextChannel | undefined;
-        if (channel) return channel;
-      }
-      void templeRole; // riservato per usi futuri (es. menzionare il ruolo)
+      const direct = notifyMap.get(templeKey) ?? null;
+      if (direct) return { channel: direct, templeResolved: templeKey };
     }
   }
 
   const fallbackId = config.donationTracking?.fallbackChannelId;
   if (fallbackId) {
-    const channel = client.channels.cache.get(fallbackId);
-    if (channel && channel.isTextBased()) return channel as TextChannel;
+    const ch = client.channels.cache.get(fallbackId);
+    if (ch && ch.isTextBased()) return { channel: ch as TextChannel, templeResolved: templeKey };
   }
 
-  return null;
+  if (guild && templeKey === null) {
+    const anyNotify = (config.notifyChannelIds ?? []).find((id) => guild.channels.cache.has(id));
+    if (anyNotify) {
+      const ch = guild.channels.cache.get(anyNotify);
+      if (ch && ch.isTextBased()) return { channel: ch as TextChannel, templeResolved: null };
+    }
+  }
+
+  return { channel: null, templeResolved: templeKey };
 }
 
 async function sendDonationNotification(
-  client: Client,
   channel: TextChannel,
   wvUsername: string,
-  amount: number | null,
-  donorMember: ReturnType<typeof findDiscordMemberByWolvesvilleName>
-) {
-  const mention = donorMember ? `<@${donorMember.id}>` : `**${wvUsername}**`;
-  const amountText = amount !== null ? `**${amount.toLocaleString("it-IT")}** monete` : "monete";
+  amount: number,
+  templeLabel: string | null
+): Promise<string | undefined> {
+  const header = templeLabel ? `[${templeLabel}] ` : "";
+  const amountText = `**${amount.toLocaleString("it-IT")}** monete`;
 
   const embed = new EmbedBuilder()
     .setColor(EMBED_COLOR)
-    .setDescription(`💰 ${mention} ha appena donato ${amountText} al clan!`);
+    .setDescription(`💰 ${header}**${wvUsername}** ha appena donato ${amountText} al clan!`);
 
   try {
-    await channel.send({ embeds: [embed] });
+    const msg = await channel.send({ embeds: [embed] });
+    return msg.id;
   } catch (err) {
     logger.error({ err, wvUsername, channelId: channel.id }, "donation-tracker: invio notifica fallito");
+    return undefined;
   }
 }
 
+function transactionToDonationEntry(
+  tx: ClanGoldTransaction,
+  notificationMessageId?: string,
+  notificationChannelId?: string
+): DonationEntry | null {
+  if (!tx.playerUsername) return null;
+  return {
+    id: tx.id,
+    eventTime: tx.creationTime,
+    processedAt: new Date().toISOString(),
+    playerId: tx.playerId,
+    playerUsername: tx.playerUsername,
+    amount: tx.gold,
+    rawAction: tx.type,
+    notificationMessageId,
+    notificationChannelId,
+  };
+}
+
 async function pollOnce(client: Client): Promise<void> {
-  if (pollInFlight) return; // evita sovrapposizioni se un giro precedente è ancora in corso
+  if (pollInFlight) return;
   pollInFlight = true;
 
   try {
@@ -136,65 +147,109 @@ async function pollOnce(client: Client): Promise<void> {
       return;
     }
 
-    const since = tracking.lastProcessedAt;
-    const entries = await fetchClanLog(clanId, since);
+    const [ledger, membersById] = await Promise.all([
+      fetchClanLedger(clanId),
+      refreshMembersCache(clanId),
+    ]);
+    if (ledger.length === 0) return;
 
-    if (entries.length === 0) return;
+    const existingIds = new Set((config.donationHistory ?? []).map((e) => e.id));
+    const alreadyNotified = new Set(tracking.recentEventIds ?? []);
 
-    // Ordina per timestamp crescente così processiamo in ordine cronologico
-    // e l'ultimo processato diventa correttamente il "più recente".
-    const sorted = [...entries].sort(
+    const sorted = [...ledger].sort(
       (a, b) => new Date(a.creationTime).getTime() - new Date(b.creationTime).getTime()
     );
 
-    const alreadySeen = new Set(tracking.recentEventIds ?? []);
-    const sinceMs = since ? new Date(since).getTime() : 0;
+    const newHistory: DonationEntry[] = [];
+    const newNotifiedIds: string[] = [];
+    let newestEventAt = tracking.lastProcessedAt;
 
-    let newestProcessedAt = since;
-    const newSeenIds: string[] = [];
+    for (const tx of sorted) {
+      const txMs = new Date(tx.creationTime).getTime();
+      if (Number.isNaN(txMs)) continue;
+      if (newestEventAt && txMs < new Date(newestEventAt).getTime()) continue;
 
-    for (const entry of sorted) {
-      const entryMs = new Date(entry.creationTime).getTime();
-      if (Number.isNaN(entryMs) || entryMs < sinceMs) continue;
-      const entryId = syntheticEntryId(entry);
-      if (alreadySeen.has(entryId)) continue;
+      if (!newestEventAt || txMs > new Date(newestEventAt).getTime()) {
+        newestEventAt = tx.creationTime;
+      }
 
-      newSeenIds.push(entryId);
-      newestProcessedAt = entry.creationTime;
+      if (!isDonation(tx)) continue;
+      if (existingIds.has(tx.id)) continue;
 
-      if (!isDonationEvent(entry)) continue;
-
-      const wvUsername = extractDonorUsername(entry);
+      const wvUsername = tx.playerUsername;
       if (!wvUsername) {
-        logger.warn({ entry }, "donation-tracker: evento donazione senza username giocatore");
+        logger.warn({ tx }, "donation-tracker: transazione donazione senza username");
         continue;
       }
 
-      const amount = extractDonationAmount(entry);
-      const donorMember = findDiscordMemberByWolvesvilleName(client, wvUsername);
-      if (!donorMember) {
-        logger.info({ wvUsername }, "donation-tracker: nessun membro Discord corrispondente trovato");
+      const wvMember = tx.playerId ? membersById.get(tx.playerId) : undefined;
+      const flair = wvMember?.flair;
+      const templeKey = templeKeyFromFlair(flair);
+
+      if (!wvMember) {
+        logger.info(
+          { wvUsername, playerId: tx.playerId },
+          "donation-tracker: membro non trovato nella lista clan (flair non disponibile, temple via fallback)"
+        );
+      } else {
+        logger.info(
+          { wvUsername, flair, templeKey },
+          "donation-tracker: flair -> tempio risolto"
+        );
       }
 
-      const channel = await resolveTargetChannel(client, donorMember);
-      if (!channel) {
-        logger.warn({ wvUsername }, "donation-tracker: nessun canale tempio/fallback risolto, notifica saltata");
-        continue;
+      let notificationMessageId: string | undefined;
+      let notificationChannelId: string | undefined;
+
+      if (!alreadyNotified.has(tx.id)) {
+        const { channel, templeResolved } = await resolveDonationChannel(client, templeKey);
+        if (channel) {
+          const templeLabel = templeResolved
+            ? (TEMPLE_DISPLAY_NAME.get(templeResolved) ?? templeResolved.toUpperCase())
+            : null;
+          notificationMessageId = await sendDonationNotification(
+            channel,
+            wvUsername,
+            tx.gold,
+            templeLabel
+          );
+          notificationChannelId = channel.id;
+          logger.info(
+            { wvUsername, amount: tx.gold, channelId: channel.id, temple: templeResolved },
+            "donation-tracker: notifica inviata"
+          );
+        } else {
+          logger.warn(
+            { wvUsername, templeKey },
+            "donation-tracker: nessun canale tempio/fallback risolto, notifica saltata"
+          );
+        }
+        newNotifiedIds.push(tx.id);
       }
 
-      await sendDonationNotification(client, channel, wvUsername, amount, donorMember);
-      logger.info({ wvUsername, amount, channelId: channel.id }, "donation-tracker: notifica inviata");
+      const entry = transactionToDonationEntry(tx, notificationMessageId, notificationChannelId);
+      if (entry) newHistory.push(entry);
     }
 
-    // Manteniamo solo gli ID dell'ultimo minuto di finestra per evitare che
-    // l'array cresca indefinitamente, ma coprendo il caso limite in cui due
-    // giri consecutivi vedano lo stesso istante di confine.
+    if (newHistory.length === 0 && newestEventAt === tracking.lastProcessedAt) {
+      return;
+    }
+
+    const mergedHistory = [...newHistory, ...(config.donationHistory ?? [])]
+      .sort(
+        (a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime()
+      )
+      .slice(0, HISTORY_MAX_ENTRIES);
+
+    const mergedNotified = [...alreadyNotified, ...newNotifiedIds].slice(-500);
+
     saveConfig({
       ...config,
+      donationHistory: mergedHistory,
       donationTracking: {
         ...tracking,
-        lastProcessedAt: newestProcessedAt,
-        recentEventIds: [...alreadySeen, ...newSeenIds].slice(-500),
+        lastProcessedAt: newestEventAt ?? tracking.lastProcessedAt,
+        recentEventIds: mergedNotified,
       },
     });
   } catch (err) {
@@ -204,11 +259,18 @@ async function pollOnce(client: Client): Promise<void> {
   }
 }
 
+const TEMPLE_DISPLAY_NAME = new Map<string, string>([
+  ["rinascita", "Rinascita"],
+  ["abisso", "Abissi"],
+  ["eclissi", "Eclissi"],
+  ["folgori", "Folgori"],
+]);
+
 export function startDonationTracker(client: Client): void {
   if (pollTimer !== null) return;
-  logger.info("donation-tracker: avviato (polling ogni 60s)");
+  logger.info("donation-tracker: avviato (polling ogni 20s via /ledger, routing per flair Wolvesville)");
   pollTimer = setInterval(() => void pollOnce(client), POLL_INTERVAL_MS);
-  void pollOnce(client); // primo giro immediato, non aspettare 60s
+  void pollOnce(client);
 }
 
 export function stopDonationTracker(): void {

@@ -143,6 +143,47 @@ export async function fetchClanById(clanId: string): Promise<WvClan | null> {
 }
 
 /**
+ * Tipo di transazione oro del clan.
+ * NOTA: il valore osservato realmente dall'endpoint /clans/{id}/ledger per una
+ * donazione di un giocatore è "DONATE" (non "GOLD_DONATION" come indicato da
+ * una precedente ipotesi sullo schema OpenAPI, mai verificata sul campo).
+ * Teniamo comunque GOLD_DONATION/GOLD_DEPOSIT come alias di sicurezza, nel
+ * caso l'API restituisca valori diversi in altri contesti.
+ */
+export type ClanGoldTransactionType =
+  | "DONATE"
+  | "GOLD_DONATION"
+  | "GOLD_PURCHASED_QUEST_SLOT"
+  | "GOLD_REFUNDED_QUEST_SLOT"
+  | "GOLD_QUEST_PURCHASE"
+  | "GOLD_QUEST_REFUND"
+  | "GOLD_QUEST_REWARD"
+  | "GOLD_WITHDRAW"
+  | "GOLD_DEPOSIT";
+
+/**
+ * Singola transazione del clan ledger (oro/gemme).
+ * Endpoint: GET /clans/{clanId}/ledger
+ * Risposta: array di ClanGoldTransaction.
+ */
+export interface ClanGoldTransaction {
+  id: string;
+  /** Importo di oro della transazione. Per una donazione è > 0. */
+  gold: number;
+  /** Importo di gemme della transazione. */
+  gems: number;
+  playerId?: string;
+  playerUsername?: string;
+  playerBotId?: string;
+  playerBotOwnerUsername?: string;
+  /** Quest associata (es. acquisto slot / claim reward). */
+  clanQuestId?: string;
+  type: ClanGoldTransactionType;
+  creationTime: string;
+  comment?: string;
+}
+
+/**
  * Rappresenta un membro del clan restituito da GET /clans/{clanId}/members.
  * Campi confermati empiricamente (nessun campo di oro/donazioni cumulativo
  * osservato finora).
@@ -242,11 +283,43 @@ export async function fetchClanLog(clanId: string, since?: string): Promise<WvCl
   }
 
   const data = (await resp.json()) as unknown;
-  // Alcune API restituiscono { entries: [...] } invece di un array nudo:
-  // gestiamo entrambi i casi finché non è confermato il formato reale.
   if (Array.isArray(data)) return data as WvClanLogEntry[];
   if (data && typeof data === "object" && Array.isArray((data as any).entries)) {
     return (data as any).entries as WvClanLogEntry[];
+  }
+  return [];
+}
+
+/**
+ * Recupera il "gold transaction ledger" del clan — lo storico ufficiale
+ * di TUTTE le transazioni di oro/gemme del clan (donazioni, spese per
+ * quest, premi, ritiri, ecc.). A differenza di /logs restituisce
+ * tipicamente più entry recenti (non solo 1) e include i campi:
+ *   - id (UUID univoco — perfetto per deduplicare)
+ *   - gold (importo)
+ *   - type (es. GOLD_DONATION)
+ *   - playerId / playerUsername
+ * L'endpoint al momento non supporta parametri di paginazione/since noti.
+ */
+export async function fetchClanLedger(clanId: string): Promise<ClanGoldTransaction[]> {
+  const resp = await fetch(`${WV_BASE}/clans/${clanId}/ledger`, {
+    headers: headers(),
+  });
+
+  if (resp.status === 401) {
+    throw new Error(
+      "401_UNAUTHORIZED: Il bot Wolvesville non è stato aggiunto come clan bot. Il leader del clan deve andare in Impostazioni clan → Bot e aggiungere questo bot."
+    );
+  }
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Wolvesville API ledger error ${resp.status}: ${text}`);
+  }
+
+  const data = (await resp.json()) as unknown;
+  if (Array.isArray(data)) return data as ClanGoldTransaction[];
+  if (data && typeof data === "object" && Array.isArray((data as any).entries)) {
+    return (data as any).entries as ClanGoldTransaction[];
   }
   return [];
 }
