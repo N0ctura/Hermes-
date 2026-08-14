@@ -7,7 +7,6 @@ import { resolveNotifyChannelsByTemple, templeKeyFromFlair } from "./temples.js"
 
 const POLL_INTERVAL_MS = 20_000;
 const MEMBERS_CACHE_TTL_MS = 10 * 60 * 1000;
-const EMBED_COLOR = 0xf1c40f;
 const HISTORY_MAX_ENTRIES = 1000;
 
 const DONATION_TYPES: ReadonlySet<ClanGoldTransaction["type"]> = new Set([
@@ -23,8 +22,44 @@ let lastMembersFetchAt = 0;
 let cachedMembers: WvClanMember[] = [];
 let cachedMembersById: Map<string, WvClanMember> = new Map();
 
+type DonationCurrency = "gold" | "gems";
+
+interface DonationAmount {
+  currency: DonationCurrency;
+  amount: number;
+}
+
+/**
+ * Determina se una transazione è una donazione e in quale valuta.
+ * Il ledger Wolvesville usa lo stesso `type` ("DONATE") sia per le
+ * donazioni in oro che per quelle in gemme: a distinguerle è quale dei
+ * due campi (`gold` / `gems`) è > 0. Non ci aspettiamo che siano
+ * entrambi valorizzati sulla stessa transazione, ma per sicurezza, se
+ * lo fossero, diamo priorità all'oro.
+ */
+function getDonationAmount(tx: ClanGoldTransaction): DonationAmount | null {
+  if (!DONATION_TYPES.has(tx.type)) return null;
+  const gold = typeof tx.gold === "number" ? tx.gold : 0;
+  const gems = typeof tx.gems === "number" ? tx.gems : 0;
+  if (gold > 0) return { currency: "gold", amount: gold };
+  if (gems > 0) return { currency: "gems", amount: gems };
+  return null;
+}
+
 function isDonation(tx: ClanGoldTransaction): boolean {
-  return DONATION_TYPES.has(tx.type) && typeof tx.gold === "number" && tx.gold > 0;
+  return getDonationAmount(tx) !== null;
+}
+
+const MAX_COMMENT_LENGTH = 300;
+
+/** Ripulisce il commento della donazione prima di salvarlo/mostrarlo. */
+function sanitizeComment(raw: string | undefined | null): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > MAX_COMMENT_LENGTH
+    ? `${trimmed.slice(0, MAX_COMMENT_LENGTH - 1)}…`
+    : trimmed;
 }
 
 async function refreshMembersCache(clanId: string, force = false): Promise<Map<string, WvClanMember>> {
@@ -91,18 +126,32 @@ async function resolveDonationChannel(
   return { channel: null, templeResolved: templeKey };
 }
 
+const CURRENCY_META: Record<DonationCurrency, { emoji: string; label: string; color: number }> = {
+  gold: { emoji: "💰", label: "monete", color: 0xf1c40f },
+  gems: { emoji: "💎", label: "gemme", color: 0x3498db },
+};
+
 async function sendDonationNotification(
   channel: TextChannel,
   wvUsername: string,
   amount: number,
-  templeLabel: string | null
+  currency: DonationCurrency,
+  templeLabel: string | null,
+  comment: string | undefined
 ): Promise<string | undefined> {
   const header = templeLabel ? `[${templeLabel}] ` : "";
-  const amountText = `**${amount.toLocaleString("it-IT")}** monete`;
+  const meta = CURRENCY_META[currency];
+  const amountText = `**${amount.toLocaleString("it-IT")}** ${meta.label}`;
 
-  const embed = new EmbedBuilder()
-    .setColor(EMBED_COLOR)
-    .setDescription(`💰 ${header}**${wvUsername}** ha appena donato ${amountText} al clan!`);
+  let description = `${meta.emoji} ${header}**${wvUsername}** ha appena donato ${amountText} al clan!`;
+  if (comment) {
+    // Il commento è testo libero inserito dal giocatore su Wolvesville: lo
+    // trattiamo come dato, non come Markdown, per evitare che rompa l'embed.
+    const safeComment = comment.replace(/`/g, "'");
+    description += `\n💬 *"${safeComment}"*`;
+  }
+
+  const embed = new EmbedBuilder().setColor(meta.color).setDescription(description);
 
   try {
     const msg = await channel.send({ embeds: [embed] });
@@ -115,6 +164,7 @@ async function sendDonationNotification(
 
 function transactionToDonationEntry(
   tx: ClanGoldTransaction,
+  donation: DonationAmount,
   notificationMessageId?: string,
   notificationChannelId?: string
 ): DonationEntry | null {
@@ -125,7 +175,9 @@ function transactionToDonationEntry(
     processedAt: new Date().toISOString(),
     playerId: tx.playerId,
     playerUsername: tx.playerUsername,
-    amount: tx.gold,
+    amount: donation.amount,
+    currency: donation.currency,
+    comment: sanitizeComment(tx.comment),
     rawAction: tx.type,
     notificationMessageId,
     notificationChannelId,
@@ -173,7 +225,8 @@ async function pollOnce(client: Client): Promise<void> {
         newestEventAt = tx.creationTime;
       }
 
-      if (!isDonation(tx)) continue;
+      const donation = getDonationAmount(tx);
+      if (!donation) continue;
       if (existingIds.has(tx.id)) continue;
 
       const wvUsername = tx.playerUsername;
@@ -200,6 +253,7 @@ async function pollOnce(client: Client): Promise<void> {
 
       let notificationMessageId: string | undefined;
       let notificationChannelId: string | undefined;
+      const comment = sanitizeComment(tx.comment);
 
       if (!alreadyNotified.has(tx.id)) {
         const { channel, templeResolved } = await resolveDonationChannel(client, templeKey);
@@ -210,12 +264,21 @@ async function pollOnce(client: Client): Promise<void> {
           notificationMessageId = await sendDonationNotification(
             channel,
             wvUsername,
-            tx.gold,
-            templeLabel
+            donation.amount,
+            donation.currency,
+            templeLabel,
+            comment
           );
           notificationChannelId = channel.id;
           logger.info(
-            { wvUsername, amount: tx.gold, channelId: channel.id, temple: templeResolved },
+            {
+              wvUsername,
+              amount: donation.amount,
+              currency: donation.currency,
+              hasComment: Boolean(comment),
+              channelId: channel.id,
+              temple: templeResolved,
+            },
             "donation-tracker: notifica inviata"
           );
         } else {
@@ -227,7 +290,7 @@ async function pollOnce(client: Client): Promise<void> {
         newNotifiedIds.push(tx.id);
       }
 
-      const entry = transactionToDonationEntry(tx, notificationMessageId, notificationChannelId);
+      const entry = transactionToDonationEntry(tx, donation, notificationMessageId, notificationChannelId);
       if (entry) newHistory.push(entry);
     }
 

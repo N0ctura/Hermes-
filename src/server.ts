@@ -345,22 +345,39 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
   app.get("/api/clan/donations", (_req, res) => {
     const cfg = loadConfig();
     const history = cfg.donationHistory ?? [];
-    const totalGold = history.reduce((sum, e) => sum + (e.amount || 0), 0);
-    const donorMap = new Map<string, { username: string; total: number; count: number; lastTime: string }>();
+
+    // Entry salvate prima dell'introduzione del tracciamento gemme non hanno
+    // `currency`: le trattiamo come oro per compatibilità con lo storico.
+    const currencyOf = (e: { currency?: "gold" | "gems" }) => e.currency ?? "gold";
+
+    const totalGold = history.reduce((sum, e) => (currencyOf(e) === "gold" ? sum + (e.amount || 0) : sum), 0);
+    const totalGems = history.reduce((sum, e) => (currencyOf(e) === "gems" ? sum + (e.amount || 0) : sum), 0);
+
+    const donorMap = new Map<
+      string,
+      { username: string; totalGold: number; totalGems: number; count: number; lastTime: string }
+    >();
     for (const d of history) {
       const key = d.playerId || d.playerUsername;
-      const cur = donorMap.get(key) || { username: d.playerUsername, total: 0, count: 0, lastTime: d.eventTime };
-      cur.total += d.amount || 0;
+      const cur =
+        donorMap.get(key) || { username: d.playerUsername, totalGold: 0, totalGems: 0, count: 0, lastTime: d.eventTime };
+      if (currencyOf(d) === "gems") {
+        cur.totalGems += d.amount || 0;
+      } else {
+        cur.totalGold += d.amount || 0;
+      }
       cur.count += 1;
       if (new Date(d.eventTime).getTime() > new Date(cur.lastTime).getTime()) cur.lastTime = d.eventTime;
       donorMap.set(key, cur);
     }
     const leaderboard = Array.from(donorMap.values())
-      .sort((a, b) => b.total - a.total)
+      .sort((a, b) => b.totalGold - a.totalGold)
       .slice(0, 100);
     res.json({
       entries: history.slice(0, 500),
-      totalDonated: totalGold,
+      totalDonated: totalGold, // alias retrocompatibile (= totalGoldDonated)
+      totalGoldDonated: totalGold,
+      totalGemsDonated: totalGems,
       totalCount: history.length,
       leaderboard,
     });

@@ -126,6 +126,9 @@ export interface DonationEntry {
   playerId?: string;
   playerUsername: string;
   amount: number;
+  /** Assente = "gold" (storico salvato prima del tracciamento gemme) */
+  currency?: "gold" | "gems";
+  comment?: string;
   rawAction: string;
   notificationMessageId?: string;
   notificationChannelId?: string;

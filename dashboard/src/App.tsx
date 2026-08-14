@@ -2075,18 +2075,29 @@ const TabClan: React.FC<{
     const donations = data?.donations ?? [];
 
     const coLeaders = members.filter((m) => m.isCoLeader).length;
-    const totalDonated = donations.reduce((s, d) => s + (d.amount || 0), 0);
+    // Le entry salvate prima del tracciamento gemme non hanno `currency`: le trattiamo come oro.
+    const currencyOf = (d: { currency?: "gold" | "gems" }) => d.currency ?? "gold";
+    const totalGoldDonated = donations.reduce((s, d) => (currencyOf(d) === "gold" ? s + (d.amount || 0) : s), 0);
+    const totalGemsDonated = donations.reduce((s, d) => (currencyOf(d) === "gems" ? s + (d.amount || 0) : s), 0);
 
-    const donorMap = new Map<string, { username: string; total: number; count: number; lastTime: string }>();
+    const donorMap = new Map<
+        string,
+        { username: string; totalGold: number; totalGems: number; count: number; lastTime: string }
+    >();
     for (const d of donations) {
         const key = d.playerId || d.playerUsername;
-        const cur = donorMap.get(key) || { username: d.playerUsername, total: 0, count: 0, lastTime: d.eventTime };
-        cur.total += d.amount || 0;
+        const cur =
+            donorMap.get(key) || { username: d.playerUsername, totalGold: 0, totalGems: 0, count: 0, lastTime: d.eventTime };
+        if (currencyOf(d) === "gems") {
+            cur.totalGems += d.amount || 0;
+        } else {
+            cur.totalGold += d.amount || 0;
+        }
         cur.count += 1;
         if (new Date(d.eventTime).getTime() > new Date(cur.lastTime).getTime()) cur.lastTime = d.eventTime;
         donorMap.set(key, cur);
     }
-    const leaderboard = Array.from(donorMap.values()).sort((a, b) => b.total - a.total);
+    const leaderboard = Array.from(donorMap.values()).sort((a, b) => b.totalGold - a.totalGold);
 
     return (
         <div className="space-y-5 animate-fade-in">
@@ -2114,11 +2125,12 @@ const TabClan: React.FC<{
                 </div>
             )}
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <Stat label="Membri" value={String(members.length)} color="indigo" />
                 <Stat label="Co-leader" value={String(coLeaders)} color="amber" />
                 <Stat label="Donazioni" value={String(donations.length)} color="emerald" />
-                <Stat label="Totale oro donato" value={totalDonated.toLocaleString("it-IT")} color="yellow" />
+                <Stat label="Totale oro donato" value={totalGoldDonated.toLocaleString("it-IT")} color="yellow" />
+                <Stat label="Totale gemme donate" value={totalGemsDonated.toLocaleString("it-IT")} color="cyan" />
             </div>
 
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
@@ -2144,6 +2156,7 @@ const TabClan: React.FC<{
                                     <th className="px-4 py-2.5 font-semibold w-12">#</th>
                                     <th className="px-4 py-2.5 font-semibold">Giocatore</th>
                                     <th className="px-4 py-2.5 font-semibold">Oro</th>
+                                    <th className="px-4 py-2.5 font-semibold">Gemme</th>
                                     <th className="px-4 py-2.5 font-semibold">Volte</th>
                                     <th className="px-4 py-2.5 font-semibold">Ultima</th>
                                 </tr>
@@ -2153,7 +2166,8 @@ const TabClan: React.FC<{
                                     <tr key={r.username + i} className="border-b border-neutral-800/60 last:border-0 hover:bg-neutral-900/60">
                                         <td className="px-4 py-2.5 font-black text-neutral-500">{i + 1}</td>
                                         <td className="px-4 py-2.5 font-semibold">{r.username}</td>
-                                        <td className="px-4 py-2.5 text-amber-300 font-bold">{r.total.toLocaleString("it-IT")}</td>
+                                        <td className="px-4 py-2.5 text-amber-300 font-bold">{r.totalGold.toLocaleString("it-IT")}</td>
+                                        <td className="px-4 py-2.5 text-cyan-300 font-bold">{r.totalGems.toLocaleString("it-IT")}</td>
                                         <td className="px-4 py-2.5 text-neutral-300">{r.count}</td>
                                         <td className="px-4 py-2.5 text-neutral-500 text-xs">
                                             {new Date(r.lastTime).toLocaleString("it-IT")}
@@ -2185,21 +2199,29 @@ const TabClan: React.FC<{
                     />
                 ) : (
                     <div className="divide-y divide-neutral-800 max-h-[520px] overflow-y-auto">
-                        {donations.map((d) => (
-                            <div key={d.id} className="p-4 flex items-center gap-3 flex-wrap">
-                                <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
-                                    Donazione
-                                </span>
-                                <span className="font-semibold text-sm truncate">{d.playerUsername}</span>
-                                <span className="text-amber-300 font-bold text-sm">
-                                    {d.amount.toLocaleString("it-IT")} monete
-                                </span>
-                                <span className="flex-1" />
-                                <span className="text-[11px] text-neutral-500 shrink-0">
-                                    {new Date(d.eventTime).toLocaleString("it-IT")}
-                                </span>
-                            </div>
-                        ))}
+                        {donations.map((d) => {
+                            const isGems = d.currency === "gems";
+                            return (
+                                <div key={d.id} className="p-4 flex items-center gap-3 flex-wrap">
+                                    <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                                        Donazione
+                                    </span>
+                                    <span className="font-semibold text-sm truncate">{d.playerUsername}</span>
+                                    <span className={classNames("font-bold text-sm", isGems ? "text-cyan-300" : "text-amber-300")}>
+                                        {d.amount.toLocaleString("it-IT")} {isGems ? "gemme" : "monete"}
+                                    </span>
+                                    {d.comment && (
+                                        <span className="text-sm text-neutral-400 italic truncate max-w-xs">
+                                            "{d.comment}"
+                                        </span>
+                                    )}
+                                    <span className="flex-1" />
+                                    <span className="text-[11px] text-neutral-500 shrink-0">
+                                        {new Date(d.eventTime).toLocaleString("it-IT")}
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>

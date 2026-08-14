@@ -193,8 +193,15 @@ export interface DonationEntry {
   playerId?: string;
   /** Username Wolvesville */
   playerUsername: string;
-  /** Importo di oro donato */
+  /** Importo donato (oro o gemme, vedi `currency`) */
   amount: number;
+  /**
+   * Valuta della donazione. Assente = "gold" per compatibilità con lo
+   * storico salvato prima dell'introduzione del tracciamento gemme.
+   */
+  currency?: "gold" | "gems";
+  /** Commento eventualmente lasciato dal giocatore al momento della donazione */
+  comment?: string;
   /** Valore raw del campo `type` del ledger (utile per debug futuro) */
   rawAction: string;
   /** Eventuale ID messaggio Discord della notifica inviata */
