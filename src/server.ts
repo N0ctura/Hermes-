@@ -15,6 +15,7 @@ import {
   type BotConfig,
 } from "./utils/storage.js";
 import { logger } from "./utils/logger.js";
+import { fetchClanById, fetchClanMembers, fetchClanLog } from "./utils/wolvesville.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -307,6 +308,35 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       );
     });
     res.status(204).end();
+  });
+
+  /* ===== Clan Wolvesville ===== */
+  app.get("/api/clan/overview", async (_req, res) => {
+    const clanId = process.env["WOLVESVILLE_CLAN_ID"];
+    if (!clanId) {
+      return res.status(400).json({ error: "WOLVESVILLE_CLAN_ID non impostato nel .env del bot" });
+    }
+    try {
+      // Ogni chiamata è isolata: se una fallisce, logghiamo il motivo reale
+      // e rispondiamo comunque con JSON valido (con quel campo vuoto/null)
+      // invece di far fallire l'intera richiesta senza un messaggio chiaro.
+      const clan = await fetchClanById(clanId).catch((e) => {
+        logger.error({ err: e }, "clan/overview: fetchClanById fallita");
+        return null;
+      });
+      const members = await fetchClanMembers(clanId).catch((e) => {
+        logger.error({ err: e }, "clan/overview: fetchClanMembers fallita");
+        throw e; // i membri sono il dato principale: qui vogliamo che l'errore emerga
+      });
+      const logs = await fetchClanLog(clanId).catch((e) => {
+        logger.error({ err: e }, "clan/overview: fetchClanLog fallita");
+        return [];
+      });
+      res.json({ clan, members, logs });
+    } catch (e: any) {
+      logger.error({ err: e }, "clan/overview: errore generale");
+      res.status(500).json({ error: e?.message || "Errore recupero dati clan" });
+    }
   });
 
   /* ===== Deleted/modified logs ===== */

@@ -27,8 +27,8 @@ const Login: React.FC<LoginProps> = ({ needPassword, onLogin }) => {
 
   if (!needPassword) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-[#111214]">
-        <div className="w-full max-w-md bg-[#1e1f22] border border-neutral-800 rounded-2xl p-8 shadow-2xl animate-fade-in">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-[#120D09]">
+        <div className="w-full max-w-md bg-[#211A12] border border-neutral-800 rounded-2xl p-8 shadow-2xl animate-fade-in">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-indigo-400" />
@@ -45,7 +45,7 @@ const Login: React.FC<LoginProps> = ({ needPassword, onLogin }) => {
           </p>
           <button
             onClick={() => onLogin("")}
-            className="w-full py-3 bg-[#5865F2] hover:bg-[#4752C4] text-white font-semibold rounded-lg transition-colors border border-[#5865F2]/20"
+            className="w-full py-3 bg-[#C9A227] hover:bg-[#8A6B1D] text-white font-semibold rounded-lg transition-colors border border-[#C9A227]/20"
           >
             Accedi alla Dashboard
           </button>
@@ -55,10 +55,10 @@ const Login: React.FC<LoginProps> = ({ needPassword, onLogin }) => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[#111214]">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-[#120D09]">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-md bg-[#1e1f22] border border-neutral-800 rounded-2xl p-8 shadow-2xl animate-fade-in"
+        className="w-full max-w-md bg-[#211A12] border border-neutral-800 rounded-2xl p-8 shadow-2xl animate-fade-in"
       >
         <div className="flex items-center gap-3 mb-6">
           <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
@@ -91,7 +91,7 @@ const Login: React.FC<LoginProps> = ({ needPassword, onLogin }) => {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 bg-[#5865F2] hover:bg-[#4752C4] disabled:bg-[#5865F2]/40 text-white font-semibold rounded-lg transition-colors border border-[#5865F2]/20 flex items-center justify-center gap-2"
+          className="w-full py-3 bg-[#C9A227] hover:bg-[#8A6B1D] disabled:bg-[#C9A227]/40 text-white font-semibold rounded-lg transition-colors border border-[#C9A227]/20 flex items-center justify-center gap-2"
         >
           {loading ? (
             <>

@@ -56,6 +56,7 @@ import * as fineCommand from "./commands/fine.js";
 import * as messaggioCondivisoCommand from "./commands/messaggio-condiviso.js";
 import * as roseCommand from "./commands/rose.js";
 import * as familyCommand from "./commands/family.js";
+import * as donazioniCommand from "./commands/donazioni.js";
 import { BOT_CONFIG } from "./utils/config.js";
 import { loadConfig, saveConfig, initStorage, type ActivePoll, type DeletedModifiedLog, type GuildLogsConfig } from "./utils/storage.js";
 import { schedulePollClose } from "./utils/poll-timer.js";
@@ -64,6 +65,7 @@ import { generateProfileCard } from "./utils/profile-card.js";
 import { handleMemberJoin, handleMemberLeave } from "./utils/welcome-leave.js";
 import { setDiscordClient } from "./utils/discord-api.js";
 import { startWebServer } from "./server.js";
+import { startDonationTracker } from "./utils/donation-tracker.js";
 
 type BotCommand =
     | typeof sondaggioCommand
@@ -72,7 +74,8 @@ type BotCommand =
     | typeof fineCommand
     | typeof messaggioCondivisoCommand
     | typeof roseCommand
-    | typeof familyCommand;
+    | typeof familyCommand
+    | typeof donazioniCommand;
 
 const commands = new Collection<string, BotCommand>();
 commands.set(sondaggioCommand.data.name, sondaggioCommand);
@@ -82,6 +85,7 @@ commands.set(fineCommand.data.name, fineCommand);
 commands.set(messaggioCondivisoCommand.data.name, messaggioCondivisoCommand);
 commands.set(roseCommand.data.name, roseCommand);
 commands.set(familyCommand.data.name, familyCommand);
+commands.set(donazioniCommand.data.name, donazioniCommand);
 
 const NETWORK_ERROR_CODES = new Set([
     "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ECONNABORTED",
@@ -220,6 +224,7 @@ export async function startBot(): Promise<void> {
         logger.info({ tag: c.user.tag }, "Bot Discord connesso");
         setDiscordClient(c);
         await startWebServer(c).catch((err) => logger.error({ err }, "Errore avvio server dashboard"));
+        startDonationTracker(c);
 
         setInterval(async () => {
             const config = loadConfig();
@@ -295,6 +300,7 @@ export async function startBot(): Promise<void> {
             messaggioCondivisoCommand.data.toJSON(),
             roseCommand.data.toJSON(),
             familyCommand.data.toJSON(),
+            donazioniCommand.data.toJSON(),
         ];
 
         try {

@@ -142,6 +142,45 @@ export async function fetchClanById(clanId: string): Promise<WvClan | null> {
   return resp.json() as Promise<WvClan>;
 }
 
+/**
+ * Rappresenta un membro del clan restituito da GET /clans/{clanId}/members.
+ * Campi confermati empiricamente (nessun campo di oro/donazioni cumulativo
+ * osservato finora).
+ */
+export interface WvClanMember {
+  playerId: string;
+  username: string;
+  level: number;
+  xp?: number;
+  status?: string;
+  playerStatus?: string;
+  isCoLeader?: boolean;
+  creationTime?: string;
+  lastOnline?: string;
+  profileIconId?: string;
+  profileIconColor?: string;
+  profileIconColorMode?: string;
+  flair?: string;
+  participateInClanQuests?: boolean;
+  [key: string]: unknown;
+}
+
+export async function fetchClanMembers(clanId: string): Promise<WvClanMember[]> {
+  const resp = await fetch(`${WV_BASE}/clans/${clanId}/members`, {
+    headers: headers(),
+  });
+  if (resp.status === 401) {
+    throw new Error(
+      "401_UNAUTHORIZED: Il bot Wolvesville non è stato aggiunto come clan bot con pieno accesso. Il leader del clan deve andare in Impostazioni clan → Bot e concedere l'accesso completo."
+    );
+  }
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Wolvesville API error ${resp.status}: ${text}`);
+  }
+  return resp.json() as Promise<WvClanMember[]>;
+}
+
 export async function shuffleQuests(clanId: string): Promise<void> {
   const resp = await fetch(`${WV_BASE}/clans/${clanId}/quests/available/shuffle`, {
     method: "POST",
@@ -154,6 +193,62 @@ export async function shuffleQuests(clanId: string): Promise<void> {
     const text = await resp.text();
     throw new Error(`Shuffle error ${resp.status}: ${text}`);
   }
+}
+
+/**
+ * Rappresenta una entry del log/attività del clan Wolvesville.
+ *
+ * Endpoint confermato empiricamente: GET /clans/{clanId}/logs (plurale).
+ * Il campo che identifica il tipo di evento si chiama `action` (non `type`
+ * come ipotizzato inizialmente). Esempio osservato: `"action": "FLAIR_EDITED"`.
+ *
+ * ⚠️ Nota importante: l'endpoint sembra restituire SOLO l'evento più recente
+ * in assoluto (non uno storico), e ignora i parametri di query comuni
+ * (limit/since/page/offset — tutti testati). Non è ancora confermato se le
+ * donazioni di oro generino una entry qui: finché non se ne osserva una dal
+ * vivo, `donation-tracker.ts` non può fare affidamento su questo endpoint da
+ * solo per rilevare le donazioni.
+ */
+export interface WvClanLogEntry {
+  playerId?: string;
+  playerUsername?: string;
+  targetPlayerId?: string;
+  targetPlayerUsername?: string;
+  creationTime: string;
+  action: string;
+  comment?: string;
+  [key: string]: unknown; // altri campi non ancora mappati (es. importo, xp, ecc.)
+}
+
+/**
+ * Recupera le voci del log/attività del clan (in pratica, oggi, una sola
+ * entry — vedi nota sopra). `since` viene comunque inviato per compatibilità
+ * futura, ma è stato verificato che l'API attuale lo ignora.
+ */
+export async function fetchClanLog(clanId: string, since?: string): Promise<WvClanLogEntry[]> {
+  const url = new URL(`${WV_BASE}/clans/${clanId}/logs`);
+  if (since) url.searchParams.set("since", since);
+
+  const resp = await fetch(url, { headers: headers() });
+
+  if (resp.status === 401) {
+    throw new Error(
+      "401_UNAUTHORIZED: Il bot Wolvesville non è stato aggiunto come clan bot con pieno accesso. Il leader del clan deve andare in Impostazioni clan → Bot e concedere l'accesso completo."
+    );
+  }
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Wolvesville API error ${resp.status}: ${text}`);
+  }
+
+  const data = (await resp.json()) as unknown;
+  // Alcune API restituiscono { entries: [...] } invece di un array nudo:
+  // gestiamo entrambi i casi finché non è confermato il formato reale.
+  if (Array.isArray(data)) return data as WvClanLogEntry[];
+  if (data && typeof data === "object" && Array.isArray((data as any).entries)) {
+    return (data as any).entries as WvClanLogEntry[];
+  }
+  return [];
 }
 
 export function profileIconUrl(iconId?: string): string | null {

@@ -70,6 +70,37 @@ export interface ScheduledMessage {
   createdAt: string;
 }
 
+export interface WvClanMember {
+  playerId: string;
+  username: string;
+  level: number;
+  xp?: number;
+  status?: string;
+  playerStatus?: string;
+  isCoLeader?: boolean;
+  creationTime?: string;
+  lastOnline?: string;
+  profileIconId?: string;
+  flair?: string;
+  participateInClanQuests?: boolean;
+}
+
+export interface WvClanLogEntry {
+  playerId?: string;
+  playerUsername?: string;
+  targetPlayerId?: string;
+  targetPlayerUsername?: string;
+  creationTime: string;
+  action: string;
+  comment?: string;
+}
+
+export interface ClanOverviewDto {
+  clan: { id: string; name: string; tag?: string; memberCount?: number; maxMemberCount?: number; iconUrl?: string } | null;
+  members: WvClanMember[];
+  logs: WvClanLogEntry[];
+}
+
 export interface DeletedModifiedLogEntry {
   id: string;
   guildId: string;

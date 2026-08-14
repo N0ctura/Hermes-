@@ -12,44 +12,11 @@ import {
   type Role,
 } from "discord.js";
 import { normalize } from "../utils/normalize.js";
-import { DEFAULT_THRESHOLD_TIERS, THRESHOLD_ROLE_ID_SET, loadConfig } from "../utils/storage.js";
+import { DEFAULT_THRESHOLD_TIERS, loadConfig } from "../utils/storage.js";
+import { TEMPLE_DEFINITIONS, resolveTempleRoles, isTempleMemberRole } from "../utils/temples.js";
 
 const FAMILY_MENU_ID = "family_view";
 const EMBED_COLOR = 0x8b0000;
-
-type TempleDefinition = {
-  key: string;
-  displayName: string;
-  aliases: string[];
-  coLeaderRoleNames: string[];
-};
-
-const TEMPLE_DEFINITIONS: TempleDefinition[] = [
-  {
-    key: "rinascita",
-    displayName: "Tempio della Rinascita",
-    aliases: ["rinascita", "rinascista"],
-    coLeaderRoleNames: ["persefone", "demetra"],
-  },
-  {
-    key: "abisso",
-    displayName: "Tempio degli Abissi",
-    aliases: ["abisso", "abissi"],
-    coLeaderRoleNames: ["poseidone"],
-  },
-  {
-    key: "eclissi",
-    displayName: "Tempio dell'Eclissi",
-    aliases: ["eclissi", "eclisse"],
-    coLeaderRoleNames: ["apollo", "artemide"],
-  },
-  {
-    key: "folgori",
-    displayName: "Tempio delle Folgori",
-    aliases: ["folgori", "folgore"],
-    coLeaderRoleNames: ["zeus"],
-  },
-];
 
 type FamilyView =
   | { type: "overview" }
@@ -148,55 +115,6 @@ function buildEmbeds(title: string, description: string, sections: SectionData[]
 
   embeds.push(embed);
   return embeds;
-}
-
-function matchesTempleAlias(text: string, definition: TempleDefinition): boolean {
-  const normalizedText = normalize(text);
-  return definition.aliases.some((alias) => normalizedText.includes(normalize(alias)));
-}
-
-function isTempleBaseRole(role: Role, definition: TempleDefinition): boolean {
-  const roleNorm = normalize(role.name);
-  return roleNorm.includes("tempio") && matchesTempleAlias(role.name, definition);
-}
-
-function isTempleMemberRole(role: Role, definition: TempleDefinition): boolean {
-  if (!matchesTempleAlias(role.name, definition)) return false;
-
-  const roleNorm = normalize(role.name);
-  return (
-    THRESHOLD_ROLE_ID_SET.has(role.id) ||
-    roleNorm.includes("tempio") ||
-    roleNorm.includes("ilota")
-  );
-}
-
-function resolveTempleRoles(guild: Guild): Map<string, Role | null> {
-  const config = loadConfig();
-  const configuredRoles = (config.templeRoleNames ?? [])
-    .map((name) => guild.roles.cache.find((role) => role.name === name) ?? null)
-    .filter((role): role is Role => Boolean(role));
-
-  const templeRoleMap = new Map<string, Role | null>();
-
-  for (const definition of TEMPLE_DEFINITIONS) {
-    const configuredRole =
-      configuredRoles.find((role) => matchesTempleAlias(role.name, definition)) ?? null;
-    if (configuredRole) {
-      templeRoleMap.set(definition.key, configuredRole);
-      continue;
-    }
-
-    const inferredRole =
-      guild.roles.cache
-        .filter((role) => role.name !== "@everyone" && !role.managed && isTempleBaseRole(role, definition))
-        .sort((a, b) => b.position - a.position)
-        .first() ?? null;
-
-    templeRoleMap.set(definition.key, inferredRole);
-  }
-
-  return templeRoleMap;
 }
 
 function buildTempleData(guild: Guild, humans: GuildMember[]): TempleData[] {

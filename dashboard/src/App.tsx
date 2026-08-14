@@ -32,6 +32,9 @@ import {
     Image as ImageIcon,
     User,
     Download,
+    Users,
+    Crown,
+    Coins,
 } from "lucide-react";
 import Login from "./pages/Login.js";
 import type {
@@ -47,6 +50,7 @@ import type {
     GuildTTS,
     GuildWelcomeLeave,
     ScheduledMessage,
+    ClanOverviewDto,
 } from "./types.js";
 
 /* ===========================
@@ -86,7 +90,7 @@ const DEFAULT_WELCOME_CARD: CardConfig = {
             width: 1440,
             height: 720,
             url: "/assets/benvenutocelestial.png",
-            color: "#1a1b1e",
+            color: "#201A13",
             borderWidth: 0,
         },
         {
@@ -99,7 +103,7 @@ const DEFAULT_WELCOME_CARD: CardConfig = {
             height: 314,
             borderRadius: 157,
             borderWidth: 8,
-            borderColor: "#5865F2",
+            borderColor: "#C9A227",
         },
         {
             id: uid(),
@@ -125,7 +129,7 @@ const DEFAULT_WELCOME_CARD: CardConfig = {
             height: 54,
             text: "Ora siamo in {MEMBER_COUNT} membri 🔥",
             fontSize: 32,
-            color: "#d4d9e2",
+            color: "#E8DFC7",
             textAlign: "left",
         },
     ],
@@ -144,7 +148,7 @@ const DEFAULT_LEAVE_CARD: CardConfig = {
             width: 1440,
             height: 720,
             url: "/assets/arrivedercicelestial.png",
-            color: "#1a1b1e",
+            color: "#201A13",
             borderWidth: 0,
             grayscale: false,
         },
@@ -158,7 +162,7 @@ const DEFAULT_LEAVE_CARD: CardConfig = {
             height: 314,
             borderRadius: 157,
             borderWidth: 8,
-            borderColor: "#ed4245",
+            borderColor: "#B0303F",
         },
         {
             id: uid(),
@@ -184,7 +188,7 @@ const DEFAULT_LEAVE_CARD: CardConfig = {
             height: 54,
             text: "Il clan ti ricorderà ❤️",
             fontSize: 32,
-            color: "#d4d9e2",
+            color: "#E8DFC7",
             textAlign: "left",
         },
     ],
@@ -337,9 +341,9 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                         if (needGrayscale) applyGrayscaleArea(x, y, w, h);
                         return true;
                     }
-                    ctx.fillStyle = fallbackColor || "#2a2c32";
+                    ctx.fillStyle = fallbackColor || "#2A2116";
                     ctx.fillRect(x, y, w, h);
-                    ctx.fillStyle = "#9aa3b2";
+                    ctx.fillStyle = "#A8967A";
                     ctx.font = "16px sans-serif";
                     ctx.textAlign = "center";
                     ctx.fillText(
@@ -352,7 +356,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                     /* fallthrough to color */
                 }
             }
-            ctx.fillStyle = fallbackColor || "#1a1b1e";
+            ctx.fillStyle = fallbackColor || "#201A13";
             ctx.fillRect(x, y, w, h);
             return false;
         }
@@ -364,7 +368,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                 const url = layer.type === "avatar" ? PREVIEW_AVATAR : layer.url;
                 const radius = layer.borderRadius ?? 0;
                 const fallbackColor =
-                    layer.type === "avatar" ? "#2a2c32" : layer.color;
+                    layer.type === "avatar" ? "#2A2116" : layer.color;
                 drawRoundedRect(layer.x, layer.y, layer.width, layer.height, radius);
                 ctx.clip();
                 drawImageOrFallback(
@@ -380,7 +384,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                 ctx.restore();
                 ctx.save();
                 if ((layer.borderWidth ?? 0) > 0) {
-                    ctx.strokeStyle = layer.borderColor || "#5865F2";
+                    ctx.strokeStyle = layer.borderColor || "#C9A227";
                     ctx.lineWidth = layer.borderWidth ?? 0;
                     const inset = (layer.borderWidth ?? 0) / 2;
                     const innerR = Math.max(0, radius - inset);
@@ -505,7 +509,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
             base.textAlign = "left";
         }
         if (type === "background") {
-            base.color = "#1a1b1e";
+            base.color = "#201A13";
         }
         onChange({ ...card, layers: [...card.layers, base] });
         setSelectedId(base.id);
@@ -572,7 +576,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                 </div>
                 <div
                     ref={wrapRef}
-                    className="rounded-xl overflow-auto p-2 bg-[#0b0c0e] flex justify-center border border-neutral-800"
+                    className="rounded-xl overflow-auto p-2 bg-[#0D0906] flex justify-center border border-neutral-800"
                     style={{ maxHeight: 620 }}
                 >
                     <div className="relative">
@@ -622,7 +626,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                                         top: `${(selectedLayer.y / card.height) * 100}%`,
                                         width: `${(selectedLayer.width / card.width) * 100}%`,
                                         height: `${(selectedLayer.height / card.height) * 100}%`,
-                                        border: "2px dashed #5865F2",
+                                        border: "2px dashed #C9A227",
                                         pointerEvents: "none",
                                         boxSizing: "border-box",
                                     }}
@@ -661,7 +665,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                                                 position: "absolute",
                                                 width: 12,
                                                 height: 12,
-                                                background: "#5865F2",
+                                                background: "#C9A227",
                                                 border: "2px solid #fff",
                                                 borderRadius: 3,
                                                 pointerEvents: "auto",
@@ -751,7 +755,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                                 className={classNames(
                                     "flex items-center gap-2 px-3 py-2 rounded-lg border text-xs cursor-pointer transition-colors",
                                     selectedId === l.id
-                                        ? "bg-[#5865F2]/10 border-[#5865F2]/40 text-white"
+                                        ? "bg-[#C9A227]/10 border-[#C9A227]/40 text-white"
                                         : "bg-neutral-800 border-neutral-800 hover:bg-neutral-700 text-neutral-300"
                                 )}
                             >
@@ -847,7 +851,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                         )}
 
                         {selectedLayer.type === "background" && (
-                            <FieldColor label="Colore sfondo" value={selectedLayer.color ?? "#1a1b1e"} onChange={(v) => updateLayer(selectedLayer.id, { color: v })} />
+                            <FieldColor label="Colore sfondo" value={selectedLayer.color ?? "#201A13"} onChange={(v) => updateLayer(selectedLayer.id, { color: v })} />
                         )}
 
                         {(selectedLayer.type === "image" || selectedLayer.type === "avatar") && selectedLayer.type === "image" && (
@@ -865,7 +869,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                             <>
                                 <div className="grid grid-cols-3 gap-2 mt-2">
                                     <FieldNum label="Bordo px" value={selectedLayer.borderWidth ?? 0} onChange={(v) => updateLayer(selectedLayer.id, { borderWidth: v })} />
-                                    <FieldColor label="Colore bordo" value={selectedLayer.borderColor ?? "#5865F2"} onChange={(v) => updateLayer(selectedLayer.id, { borderColor: v })} />
+                                    <FieldColor label="Colore bordo" value={selectedLayer.borderColor ?? "#C9A227"} onChange={(v) => updateLayer(selectedLayer.id, { borderColor: v })} />
                                     <FieldNum label="Raggio" value={selectedLayer.borderRadius ?? 0} onChange={(v) => updateLayer(selectedLayer.id, { borderRadius: v })} />
                                 </div>
                             </>
@@ -944,7 +948,7 @@ const FieldColor: React.FC<{ label: string; value: string; onChange: (c: string)
  * APP MAIN
  * =========================== */
 
-type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "tts" | "logs";
+type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "tts" | "logs" | "clan";
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
     { key: "home", label: "Home", icon: LayoutDashboard },
@@ -954,6 +958,7 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
     { key: "messages", label: "Messaggi", icon: ListTodo },
     { key: "tts", label: "TTS", icon: Volume2 },
     { key: "logs", label: "Logs", icon: Activity },
+    { key: "clan", label: "Clan Wolvesville", icon: Users },
 ];
 
 export default function App() {
@@ -971,6 +976,9 @@ export default function App() {
     const [logsConf, setLogsConf] = useState<GuildLogs | null>(null);
     const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
     const [dmLogs, setDmLogs] = useState<DeletedModifiedLogEntry[]>([]);
+    const [clanOverview, setClanOverview] = useState<ClanOverviewDto | null>(null);
+    const [clanError, setClanError] = useState<string | null>(null);
+    const [clanLoading, setClanLoading] = useState(false);
 
     const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
     const [saving, setSaving] = useState(false);
@@ -1090,6 +1098,25 @@ export default function App() {
         loadGuildData();
     }, [authed, selectedGuildId]);
 
+    /* ---------- Clan Wolvesville: membri + log ---------- */
+    const loadClanOverview = React.useCallback(async () => {
+        setClanLoading(true);
+        setClanError(null);
+        try {
+            const data = await apiCall<ClanOverviewDto>("/api/clan/overview");
+            setClanOverview(data);
+        } catch (e: any) {
+            setClanError(e?.message || "Errore caricamento dati clan");
+        } finally {
+            setClanLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (authed !== "yes") return;
+        loadClanOverview();
+    }, [authed]);
+
     /* ---------- Save helpers ---------- */
 
     const saveWl = async (patch: Partial<GuildWelcomeLeave>) => {
@@ -1183,8 +1210,8 @@ export default function App() {
 
     if (authed === "loading") {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-[#111214]">
-                <div className="w-10 h-10 border-4 border-neutral-700 border-t-[#5865F2] rounded-full animate-spin" />
+            <div className="min-h-screen flex items-center justify-center bg-[#120D09]">
+                <div className="w-10 h-10 border-4 border-neutral-700 border-t-[#C9A227] rounded-full animate-spin" />
             </div>
         );
     }
@@ -1198,50 +1225,75 @@ export default function App() {
      * ========================== */
 
     return (
-        <div className="min-h-screen bg-[#111214] text-neutral-100">
-            {/* Top bar */}
-            <header className="sticky top-0 z-30 backdrop-blur bg-[#111214]/85 border-b border-neutral-800">
-                <div className="flex items-center gap-4 px-5 py-3 max-w-[1700px] mx-auto">
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-[#5865F2]/15 border border-[#5865F2]/30 flex items-center justify-center">
-                            <Sparkles className="w-4 h-4 text-[#8ea1ff]" />
-                        </div>
-                        <div>
-                            <div className="font-black tracking-tight">Hermes v1</div>
-                            <div className="text-[10px] text-neutral-500 uppercase tracking-widest">Pannello di Controllo</div>
-                        </div>
-                    </div>
-                    <div className="flex-1" />
-                    {guilds.length > 0 && (
-                        <GuildPicker
-                            guilds={guilds}
-                            value={selectedGuildId}
-                            onChange={(gid) => setSelectedGuildId(gid)}
-                        />
-                    )}
-                    <button
-                        onClick={refreshAll}
-                        className="p-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300"
-                        title="Ricarica"
-                    >
-                        <RefreshCw className={classNames("w-4 h-4", loading && "animate-spin")} />
-                    </button>
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-xs">
-                        <span className={classNames("w-2 h-2 rounded-full", status?.online ? "bg-emerald-400" : "bg-rose-500")} />
-                        <span className="text-neutral-400">Bot</span>
-                        <span className="font-semibold text-neutral-100">{status?.online ? "Online" : "Offline"}</span>
-                    </div>
-                    {saving && (
-                        <div className="text-[11px] px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center gap-1.5">
-                            <Save className="w-3.5 h-3.5 animate-pulse" /> Salvando...
-                        </div>
-                    )}
-                </div>
-            </header>
+        <div className="h-screen flex bg-[#0D0906] text-[#EDE3C8] overflow-hidden">
+            {/* Rail dei server: un medaglione per ogni server dove Ade è presente */}
+            <nav className="w-[72px] shrink-0 bg-[#0A0705] border-r border-[#241B12] flex flex-col items-center py-3 gap-2 overflow-y-auto">
+                {guilds.map((g) => {
+                    const active = g.id === selectedGuildId;
+                    return (
+                        <button
+                            key={g.id}
+                            onClick={() => setSelectedGuildId(g.id)}
+                            title={g.name}
+                            className="relative group w-11 h-11 shrink-0"
+                        >
+                            <span
+                                className={classNames(
+                                    "absolute -left-3 top-1/2 -translate-y-1/2 w-1 rounded-r-full bg-[#E4C468] transition-all",
+                                    active ? "h-8" : "h-0 group-hover:h-4"
+                                )}
+                            />
+                            {g.icon ? (
+                                <img
+                                    src={`https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png`}
+                                    className={classNames(
+                                        "w-11 h-11 rounded-full object-cover border-2 transition-colors",
+                                        active ? "border-[#B8912A]" : "border-transparent group-hover:border-[#4A3A24]"
+                                    )}
+                                />
+                            ) : (
+                                <div
+                                    className={classNames(
+                                        "w-11 h-11 rounded-full border-2 flex items-center justify-center text-sm font-display font-bold transition-colors",
+                                        active
+                                            ? "border-[#B8912A] bg-[#B8912A]/15 text-[#E4C468]"
+                                            : "border-transparent bg-[#1C150E] text-[#A8967A] group-hover:border-[#4A3A24]"
+                                    )}
+                                >
+                                    {g.name.charAt(0)}
+                                </div>
+                            )}
+                        </button>
+                    );
+                })}
+                <div className="w-8 border-t border-[#241B12] my-1 shrink-0" />
+                <button
+                    onClick={refreshAll}
+                    title="Ricarica"
+                    className="w-11 h-11 rounded-full flex items-center justify-center text-[#A8967A] hover:bg-[#1C150E] hover:text-[#E4C468] transition-colors shrink-0"
+                >
+                    <RefreshCw className={classNames("w-4 h-4", loading && "animate-spin")} />
+                </button>
+            </nav>
 
-            <div className="max-w-[1700px] mx-auto px-5 py-5 grid grid-cols-[240px_1fr] gap-5">
-                {/* Sidebar tabs */}
-                <aside className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-3 h-fit sticky top-24 space-y-1">
+            {/* Colonna sale: le sezioni di configurazione, come una lista di canali */}
+            <aside className="w-[248px] shrink-0 bg-[#15100B] border-r border-[#241B12] flex flex-col">
+                <div className="px-4 py-4 border-b border-[#241B12] flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-[#B8912A]/15 border border-[#B8912A]/40 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-4 h-4 text-[#E4C468]" />
+                    </div>
+                    <div className="min-w-0">
+                        <div className="font-display font-bold tracking-wide text-[#EDE3C8] leading-tight">Ade</div>
+                        <div className="text-[11px] text-[#7C6A4C] truncate">
+                            {guilds.find((g) => g.id === selectedGuildId)?.name || "Nessun server"}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+                    <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[#5C4E38]">
+                        Impostazioni
+                    </div>
                     {TABS.map((t) => {
                         const active = tab === t.key;
                         const Icon = t.icon;
@@ -1250,20 +1302,31 @@ export default function App() {
                                 key={t.key}
                                 onClick={() => setTab(t.key)}
                                 className={classNames(
-                                    "w-full text-left px-3 py-2.5 rounded-xl text-sm inline-flex items-center gap-2.5 transition-colors",
+                                    "w-full text-left pl-3 pr-3 py-2 rounded-lg text-sm inline-flex items-center gap-2.5 transition-colors border-l-2",
                                     active
-                                        ? "bg-[#5865F2] text-white shadow-[0_8px_20px_-10px_#5865F2]"
-                                        : "text-neutral-300 hover:bg-neutral-800"
+                                        ? "bg-[#B8912A]/12 border-[#B8912A] text-[#E4C468]"
+                                        : "border-transparent text-[#B5A583] hover:bg-[#1C150E] hover:text-[#EDE3C8]"
                                 )}
                             >
-                                <Icon className="w-4 h-4" />
-                                <span className="font-medium">{t.label}</span>
+                                <Icon className="w-4 h-4 shrink-0" />
+                                <span className="font-medium truncate">{t.label}</span>
                             </button>
                         );
                     })}
-                </aside>
+                </div>
 
-                <main className="min-w-0">
+                <div className="p-2.5 border-t border-[#241B12] flex items-center gap-2">
+                    <span className={classNames("w-2 h-2 rounded-full shrink-0", status?.online ? "bg-emerald-400" : "bg-rose-500")} />
+                    <span className="text-xs text-[#7C6A4C]">Bot</span>
+                    <span className="text-xs font-semibold text-[#EDE3C8]">{status?.online ? "Online" : "Offline"}</span>
+                    <div className="flex-1" />
+                    {saving && <Save className="w-3.5 h-3.5 text-[#E4C468] animate-pulse" title="Salvando..." />}
+                </div>
+            </aside>
+
+            {/* Contenuto della sezione selezionata */}
+            <main className="flex-1 min-w-0 overflow-y-auto">
+                <div className="max-w-[1200px] mx-auto px-6 py-6">
                     {tab === "home" && <TabHome status={status} />}
                     {tab === "welcome" && wlConf && (
                         <TabWelcomeLeave
@@ -1299,8 +1362,11 @@ export default function App() {
                     {tab === "logs" && logsConf && (
                         <TabLogs conf={logsConf} channels={textChannels} onChange={saveLogs} entries={dmLogs} onRefresh={loadGuildData} />
                     )}
-                </main>
-            </div>
+                    {tab === "clan" && (
+                        <TabClan data={clanOverview} error={clanError} loading={clanLoading} onRefresh={loadClanOverview} />
+                    )}
+                </div>
+            </main>
 
             {toast && (
                 <div
@@ -1322,53 +1388,6 @@ export default function App() {
 /* ==========================
  * TAB COMPONENTS
  * ========================== */
-
-const GuildPicker: React.FC<{
-    guilds: DiscordGuild[];
-    value: string;
-    onChange: (id: string) => void;
-}> = ({ guilds, value, onChange }) => {
-    const [open, setOpen] = useState(false);
-    const sel = guilds.find((g) => g.id === value);
-    return (
-        <div className="relative">
-            <button
-                onClick={() => setOpen((o) => !o)}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-sm max-w-xs"
-            >
-                <Server className="w-4 h-4 text-neutral-400" />
-                <span className="truncate font-medium">{sel?.name || "Seleziona server"}</span>
-                <ChevronDown className={classNames("w-4 h-4 text-neutral-400", open && "rotate-180 transition-transform")} />
-            </button>
-            {open && (
-                <div className="absolute right-0 mt-2 w-72 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl animate-slide-up z-40">
-                    {guilds.map((g) => (
-                        <button
-                            key={g.id}
-                            onClick={() => {
-                                onChange(g.id);
-                                setOpen(false);
-                            }}
-                            className={classNames(
-                                "w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-neutral-800",
-                                g.id === value && "bg-[#5865F2]/10 text-white"
-                            )}
-                        >
-                            {g.icon ? (
-                                <img src={`https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png`} className="w-8 h-8 rounded-lg object-cover" />
-                            ) : (
-                                <div className="w-8 h-8 rounded-lg bg-neutral-800 flex items-center justify-center text-xs font-bold">
-                                    {g.name.charAt(0)}
-                                </div>
-                            )}
-                            <span className="truncate">{g.name}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
 
 const TabHome: React.FC<{ status: BotStatusDto | null }> = ({ status }) => {
     if (!status) return <EmptyState icon={Activity} title="Stato non disponibile" text="Ricarica tra pochi secondi..." />;
@@ -1583,7 +1602,7 @@ const TabAutorole: React.FC<{
                                 onClick={() => toggle(r.id)}
                                 className={classNames(
                                     "text-left px-3 py-2.5 rounded-xl border inline-flex items-center gap-3 transition-colors",
-                                    isSel ? "bg-[#5865F2]/10 border-[#5865F2]/40" : "bg-neutral-950 border-neutral-800 hover:bg-neutral-800"
+                                    isSel ? "bg-[#C9A227]/10 border-[#C9A227]/40" : "bg-neutral-950 border-neutral-800 hover:bg-neutral-800"
                                 )}
                             >
                                 <span
@@ -1594,7 +1613,7 @@ const TabAutorole: React.FC<{
                                 <span className="flex-1" />
                                 <span className={classNames(
                                     "w-5 h-5 rounded-md border-2 flex items-center justify-center",
-                                    isSel ? "bg-[#5865F2] border-[#5865F2] text-white" : "border-neutral-600"
+                                    isSel ? "bg-[#C9A227] border-[#C9A227] text-[#1a1410]" : "border-neutral-600"
                                 )}>
                                     {isSel && "✓"}
                                 </span>
@@ -1639,7 +1658,7 @@ const TabScheduled: React.FC<{
                 </div>
                 <button
                     onClick={() => setOpen(blank())}
-                    className="px-4 py-2 bg-[#5865F2] hover:bg-[#4752C4] text-white font-semibold rounded-xl text-sm inline-flex items-center gap-2 shadow-[0_8px_24px_-10px_#5865F2]"
+                    className="px-4 py-2 bg-[#C9A227] hover:bg-[#8A6B1D] text-[#1a1410] font-semibold rounded-xl text-sm inline-flex items-center gap-2 shadow-[0_8px_24px_-10px_#C9A227]"
                 >
                     <Plus className="w-4 h-4" /> Nuovo messaggio
                 </button>
@@ -1785,7 +1804,7 @@ const ScheduledModal: React.FC<{
                     </button>
                     <button
                         onClick={() => onSave(m)}
-                        className="px-4 py-2 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white text-sm font-semibold inline-flex items-center gap-2"
+                        className="px-4 py-2 rounded-xl bg-[#C9A227] hover:bg-[#8A6B1D] text-[#1a1410] text-sm font-semibold inline-flex items-center gap-2"
                     >
                         <Save className="w-4 h-4" /> Salva
                     </button>
@@ -1875,7 +1894,7 @@ const TabTTS: React.FC<{
                             placeholder="Es. .tts oppure !parla"
                             className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm"
                         />
-                        <button onClick={addPref} className="px-3 py-2 bg-[#5865F2] hover:bg-[#4752C4] text-white rounded-lg text-sm font-semibold">
+                        <button onClick={addPref} className="px-3 py-2 bg-[#C9A227] hover:bg-[#8A6B1D] text-[#1a1410] rounded-lg text-sm font-semibold">
                             Aggiungi
                         </button>
                     </div>
@@ -1984,7 +2003,7 @@ const TabLogs: React.FC<{
                                 className={classNames(
                                     "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors",
                                     filter === f
-                                        ? "bg-[#5865F2] text-white border-[#5865F2]/40"
+                                        ? "bg-[#C9A227] text-[#1a1410] border-[#C9A227]/40"
                                         : "bg-neutral-950 text-neutral-300 border-neutral-800 hover:bg-neutral-800"
                                 )}
                             >
@@ -2033,6 +2052,114 @@ const TabLogs: React.FC<{
                                         </div>
                                     </div>
                                 )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const TabClan: React.FC<{
+    data: ClanOverviewDto | null;
+    error: string | null;
+    loading: boolean;
+    onRefresh: () => Promise<void>;
+}> = ({ data, error, loading, onRefresh }) => {
+    const members = data?.members ?? [];
+    const logs = data?.logs ?? [];
+    const coLeaders = members.filter((m) => m.isCoLeader).length;
+
+    return (
+        <div className="space-y-5 animate-fade-in">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-black tracking-tight">Clan Wolvesville</h1>
+                    <p className="text-sm text-neutral-400 mt-1">
+                        {data?.clan?.name
+                            ? `${data.clan.name}${data.clan.tag ? ` [${data.clan.tag}]` : ""} — elenco membri e log di attività letti dall'API di Wolvesville.`
+                            : "Elenco membri e log di attività del clan, letti dall'API ufficiale di Wolvesville."}
+                    </p>
+                </div>
+                <button
+                    onClick={onRefresh}
+                    className="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 border border-neutral-700 inline-flex items-center gap-1.5"
+                >
+                    <RefreshCw className={classNames("w-3.5 h-3.5", loading && "animate-spin")} /> Aggiorna
+                </button>
+            </div>
+
+            {error && (
+                <div className="p-4 rounded-xl bg-rose-900/20 border border-rose-500/30 text-sm text-rose-200 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Stat label="Membri" value={String(members.length)} color="indigo" />
+                <Stat label="Co-leader" value={String(coLeaders)} color="amber" />
+                <Stat label="Voci nel log" value={String(logs.length)} color="rose" />
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-neutral-800">
+                    <h3 className="text-sm font-bold">Membri del clan</h3>
+                </div>
+                {members.length === 0 ? (
+                    <EmptyState compact icon={Users} title="Nessun membro" text="Nessun membro trovato, oppure i dati non sono ancora stati caricati." />
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="text-left text-[11px] uppercase tracking-wider text-neutral-500 border-b border-neutral-800">
+                                    <th className="px-4 py-2.5 font-semibold">Membro</th>
+                                    <th className="px-4 py-2.5 font-semibold">Livello</th>
+                                    <th className="px-4 py-2.5 font-semibold">XP</th>
+                                    <th className="px-4 py-2.5 font-semibold">Ruolo</th>
+                                    <th className="px-4 py-2.5 font-semibold">Ultimo accesso</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {members.map((m) => (
+                                    <tr key={m.playerId} className="border-b border-neutral-800/60 last:border-0 hover:bg-neutral-900/60">
+                                        <td className="px-4 py-2.5 font-semibold flex items-center gap-1.5">
+                                            {m.isCoLeader && <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                            {m.username}
+                                        </td>
+                                        <td className="px-4 py-2.5 text-neutral-300">{m.level}</td>
+                                        <td className="px-4 py-2.5 text-neutral-300">{m.xp ?? "—"}</td>
+                                        <td className="px-4 py-2.5 text-neutral-400">{m.isCoLeader ? "Co-leader" : "Membro"}</td>
+                                        <td className="px-4 py-2.5 text-neutral-500 text-xs">
+                                            {m.lastOnline ? new Date(m.lastOnline).toLocaleString("it-IT") : "—"}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-neutral-800 flex items-center justify-between">
+                    <h3 className="text-sm font-bold">Log del clan</h3>
+                    <span className="text-[11px] text-neutral-500">L'API di Wolvesville espone solo l'evento più recente, non uno storico completo</span>
+                </div>
+                {logs.length === 0 ? (
+                    <EmptyState compact icon={Coins} title="Nessuna voce di log" text="Nessuna attività recente disponibile dall'API del clan." />
+                ) : (
+                    <div className="divide-y divide-neutral-800">
+                        {logs.map((l, i) => (
+                            <div key={i} className="p-4 flex items-center gap-3">
+                                <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 shrink-0">
+                                    {l.action}
+                                </span>
+                                <span className="font-semibold text-sm truncate">{l.playerUsername || l.targetPlayerUsername || "—"}</span>
+                                {l.comment && <span className="text-sm text-neutral-400 truncate">{l.comment}</span>}
+                                <span className="flex-1" />
+                                <span className="text-[11px] text-neutral-500 shrink-0">{new Date(l.creationTime).toLocaleString("it-IT")}</span>
                             </div>
                         ))}
                     </div>

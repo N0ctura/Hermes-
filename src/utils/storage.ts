@@ -183,6 +183,25 @@ export interface RoseLobby {
   createdAt: string;
 }
 
+export interface DonationTrackingConfig {
+  /** Abilita/disabilita il polling delle donazioni per l'intero bot. */
+  enabled: boolean;
+  /**
+   * ISO timestamp dell'evento del log Wolvesville più recente già processato.
+   * Usato come cursore anti-duplicati: al giro successivo si considerano
+   * solo eventi con timestamp strettamente maggiore di questo.
+   */
+  lastProcessedAt?: string;
+  /**
+   * ID degli eventi già notificati nell'ultimo secondo/minuto sovrapposto,
+   * per evitare doppi invii quando due giri di polling toccano lo stesso
+   * istante di confine (vedi utils/donation-tracker.ts).
+   */
+  recentEventIds?: string[];
+  /** Canale di fallback se un donatore non appartiene a nessun tempio rilevato. */
+  fallbackChannelId?: string;
+}
+
 export interface BotConfig {
   pollChannelId?: string | null;
   notifyChannelIds: string[];
@@ -208,6 +227,7 @@ export interface BotConfig {
   roseLobbyChannelId?: string;
   activeRoseLobby?: RoseLobby;
   lastPollWasShuffled?: boolean;
+  donationTracking?: DonationTrackingConfig;
 }
 
 const DEFAULT_CONFIG: BotConfig = {
@@ -230,6 +250,14 @@ function normalizeConfig(config: Partial<BotConfig> | null | undefined): BotConf
     ttsConfigs: Array.isArray(config?.ttsConfigs) ? config.ttsConfigs : [],
     logsConfigs: Array.isArray(config?.logsConfigs) ? config.logsConfigs : [],
     deletedModifiedLogs: Array.isArray(config?.deletedModifiedLogs) ? config.deletedModifiedLogs : [],
+    donationTracking: {
+      enabled: config?.donationTracking?.enabled ?? false,
+      lastProcessedAt: config?.donationTracking?.lastProcessedAt,
+      recentEventIds: Array.isArray(config?.donationTracking?.recentEventIds)
+        ? config.donationTracking.recentEventIds
+        : [],
+      fallbackChannelId: config?.donationTracking?.fallbackChannelId,
+    },
   };
 }
 
