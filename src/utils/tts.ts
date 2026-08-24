@@ -45,11 +45,34 @@ const players: Map<string, AudioPlayer> = new Map();
 const queues: Map<string, string[]> = new Map();
 const isPlaying: Map<string, boolean> = new Map();
 const activeVoiceChannels: Map<string, string> = new Map();
+// Ultimo utente per cui è stato annunciato il nome ("nickname dice: ..."), per guild.
+// Serve per evitare di ripetere "nickname dice" ad ogni messaggio quando è sempre
+// la stessa persona a scrivere di fila.
+const lastAnnouncedSpeaker: Map<string, string> = new Map();
 
 function removeEmojis(str: string): string {
   const emojiRegex =
     /[\p{Emoji}\p{Emoji_Component}\p{Emoji_Modifier}\p{Emoji_Modifier_Base}\p{Emoji_Presentation}]/gu;
   return str.replace(emojiRegex, "").trim();
+}
+
+/**
+ * Ripulisce il testo prima di mandarlo al TTS da markup di Discord che, letto
+ * alla lettera, produce solo rumore: le emoji personalizzate del server
+ * (<:nome:1234567890123456789>) e le menzioni (<@id>, <@&id>, <#id>) contengono
+ * un ID numerico lunghissimo che Google TTS legge cifra per cifra ("miliardi,
+ * milioni, centinaia..."). Le rimuoviamo del tutto invece di leggerle.
+ */
+function sanitizeTextForTTS(str: string): string {
+  return str
+    // Emoji personalizzate, statiche o animate: <:nome:id> / <a:nome:id>
+    .replace(/<a?:\w+:\d+>/g, "")
+    // Menzioni utente, ruolo e canale: <@id>, <@!id>, <@&id>, <#id>
+    .replace(/<@!?\d+>/g, "")
+    .replace(/<@&\d+>/g, "")
+    .replace(/<#\d+>/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 async function textToMp3File(text: string, lang: string = "it"): Promise<string> {
@@ -375,6 +398,7 @@ export function stopTTS(guildId: string): void {
   }
   queues.delete(guildId);
   isPlaying.set(guildId, false);
+  lastAnnouncedSpeaker.delete(guildId);
   logger.info({ guildId }, "TTS: fermato e disconnesso");
 }
 
@@ -442,6 +466,11 @@ export async function handleMessageForTTS(message: {
     }
   }
 
+  // Rimuoviamo eventuali emoji personalizzate/menzioni PRIMA di controllare se è
+  // rimasto del testo da leggere: un messaggio composto solo da un'emoji custom
+  // non deve far partire il TTS a vuoto.
+  textToSpeak = sanitizeTextForTTS(textToSpeak);
+
   if (!shouldSpeak || !textToSpeak) {
     return;
   }
@@ -457,9 +486,19 @@ export async function handleMessageForTTS(message: {
     return;
   }
 
-  const cleanUsername = announceUsername
+  // Annunciamo il nome solo se è la prima volta di fila che parla questa persona:
+  // se lo stesso utente scrive più messaggi consecutivi, dal secondo in poi si
+  // legge solo la frase, senza ripetere "nickname dice:" ogni volta.
+  const isSameSpeakerAsBefore = lastAnnouncedSpeaker.get(message.guildId) === message.member.id;
+  const shouldAnnounceName = announceUsername && !isSameSpeakerAsBefore;
+
+  const cleanUsername = shouldAnnounceName
     ? removeEmojis(message.member.displayName || message.member.user.username)
     : null;
+
+  if (announceUsername) {
+    lastAnnouncedSpeaker.set(message.guildId, message.member.id);
+  }
 
   const fullText = cleanUsername ? `${cleanUsername} dice: ${textToSpeak}` : textToSpeak;
 
@@ -475,11 +514,40 @@ export async function handleMessageForTTS(message: {
 }
 
 export async function handleVoiceStateUpdate(oldState: VoiceState, newState: VoiceState): Promise<void> {
+  const guildId = newState.guild.id;
+
+  // Il bot stesso è stato disconnesso dal canale vocale (kick, disconnessione manuale
+  // dal pannello Discord, ecc.): ripuliamo solo lo stato interno.
   if (newState.member?.user.id === newState.client.user?.id) {
     if (!newState.channelId && oldState.channelId) {
-      stopTTS(newState.guild.id);
+      stopTTS(guildId);
     }
     return;
+  }
+
+  // Un utente (non il bot) ha lasciato o cambiato canale vocale: se il bot era
+  // connesso proprio al canale che ha appena lasciato, e non è rimasto più
+  // nessun utente reale (non-bot), il bot esce da solo invece di restare a
+  // "parlare al vento" in un canale vuoto.
+  const leftChannelId = oldState.channelId;
+  if (!leftChannelId) return;
+  // Se l'utente non ha davvero lasciato quel canale (es. si è solo mutato/disattivato
+  // la webcam) non c'è nulla da fare qui.
+  if (newState.channelId === leftChannelId) return;
+
+  const activeChannelId = activeVoiceChannels.get(guildId);
+  if (!activeChannelId || activeChannelId !== leftChannelId) return;
+
+  const channel = newState.guild.channels.cache.get(leftChannelId) as VoiceChannel | undefined;
+  if (!channel) return;
+
+  const hasHumans = channel.members.some((m) => !m.user.bot);
+  if (!hasHumans) {
+    logger.info(
+      { guildId, channelId: leftChannelId },
+      "TTS: nessun utente rimasto nel canale vocale, esco automaticamente"
+    );
+    stopTTS(guildId);
   }
 }
 

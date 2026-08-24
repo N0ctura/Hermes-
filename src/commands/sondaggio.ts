@@ -42,7 +42,8 @@ export async function publishPoll(
   quests: WvQuest[],
   dataFine: string,
   closesAt?: Date,
-  hideRimescolo?: boolean
+  hideRimescolo?: boolean,
+  pingRoleId?: string
 ): Promise<{ introMessageId: string; messageIds: string[]; questLabels: string[]; questImageUrls: string[] }> {
   const sorted = [
     ...quests.filter((q) => q.purchasableWithGems),
@@ -94,7 +95,13 @@ export async function publishPoll(
     timerLine = `⏳ Sondaggio aperto fino al **${dataFine}**`;
   }
 
+  // Il ruolo membri (impostato una sola volta da /impostazioni) viene taggato qui in
+  // testa al messaggio, così la notifica del sondaggio arriva davvero a tutti — non
+  // solo a chi ha già visto il canale sondaggi.
+  const roleMentionLine = pingRoleId ? `<@&${pingRoleId}>` : "";
+
   const introLines = [
+    roleMentionLine,
     `🐺 **Ecco le missioni di questa settimana!**`,
     `Usa il menu qui sotto per votare. Puoi cambiare voto in qualsiasi momento.`,
     timerLine,
@@ -106,6 +113,7 @@ export async function publishPoll(
     content: introLines.filter(Boolean).join("\n"),
     files: imageFiles,
     components: [selectRow],
+    allowedMentions: pingRoleId ? { roles: [pingRoleId] } : undefined,
   });
 
   const summaryLines = [
@@ -212,12 +220,20 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   config.lastPollWasShuffled = false;
 
+  if (!config.pingRoleId && config.pingRoleName) {
+    const oldRole = guild.roles.cache.find((r) => r.name === config.pingRoleName);
+    if (oldRole) {
+      config.pingRoleId = oldRole.id;
+    }
+  }
+
   const { introMessageId, messageIds, questLabels, questImageUrls } = await publishPoll(
     pollChannel,
     quests,
     dataFine,
     closesAtDate,
-    hideRimescolo
+    hideRimescolo,
+    config.pingRoleId
   );
 
   const closesAt = closesAtDate?.toISOString();
@@ -282,6 +298,9 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     hideRimescolo
       ? `🔀 **Rimescolo NASCOSTO** (l'ultima volta ha vinto il rimescolo — non puoi farne 2 di fila!)`
       : `🔀 Rimescolo abilitato`,
+    config.pingRoleId
+      ? `📣 Ruolo taggato nel messaggio: <@&${config.pingRoleId}>`
+      : `📣 Nessun ruolo taggato (impostalo con \`/impostazioni\`)`,
   ];
   if (notifyResults.length > 0) replyLines.push("", "**Notifiche:**", ...notifyResults);
   await interaction.editReply({ content: replyLines.join("\n") });

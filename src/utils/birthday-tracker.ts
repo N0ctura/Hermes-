@@ -79,10 +79,16 @@ async function celebrateGuild(
       const attachment = await generateBirthdayAttachment(cardData, guildConfig.card);
       const template = guildConfig.messageTemplate || DEFAULT_BIRTHDAY_MESSAGE_TEMPLATE;
       // Nel messaggio Discord (a differenza del canvas) {USERNAME} diventa una menzione reale.
-      const content = substituteBirthdayPlaceholders(
+      const wishText = substituteBirthdayPlaceholders(
         template.replaceAll("{USERNAME}", `<@${entry.userId}>`),
         cardData
       );
+
+      // Ruoli da avvisare (es. "Membri"), impostabili dalla dashboard, così l'augurio
+      // arriva a tutti e non solo a chi ha già il canale compleanni sott'occhio.
+      const validRoleIds = (guildConfig.mentionRoleIds || []).filter((id) => guild.roles.cache.has(id));
+      const roleMentions = validRoleIds.map((id) => `<@&${id}>`).join(" ");
+      const content = roleMentions ? `${roleMentions}\n${wishText}` : wishText;
 
       await channel.send({ content, files: [attachment] });
 

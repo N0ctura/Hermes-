@@ -89,6 +89,7 @@ export interface GuildBirthdayConfig {
   channelId?: string;
   listMessageId?: string;
   messageTemplate?: string;
+  mentionRoleIds?: string[];
   card?: CardConfig;
   birthdays: BirthdayEntry[];
 }

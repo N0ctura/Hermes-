@@ -254,6 +254,8 @@ export interface GuildBirthdayConfig {
   listMessageId?: string;
   /** Testo del messaggio di auguri a mezzanotte. Variabili: {USERNAME}, {SERVER_NAME}, {DATE} */
   messageTemplate?: string;
+  /** Ruoli da menzionare nel messaggio di auguri a mezzanotte (es. ruolo "Membri"), per avvisare tutti. */
+  mentionRoleIds?: string[];
   /** Layout del banner di compleanno, sistema a layer riusabile (stesso di Welcome/Leave/Profile). */
   card?: CardConfig;
   birthdays: BirthdayEntry[];

@@ -1755,6 +1755,7 @@ export default function App() {
                         <TabBirthday
                             conf={birthdayConf}
                             channels={textChannels}
+                            roles={roles}
                             members={guildMembers}
                             onChange={saveBirthday}
                             onAddEntry={addBirthdayEntry}
@@ -2715,15 +2716,24 @@ function daysUntilNextBirthday(day: number, month: number): number {
 const TabBirthday: React.FC<{
     conf: GuildBirthdayConfig;
     channels: DiscordChannel[];
+    roles: DiscordRole[];
     members: DiscordMember[];
     onChange: (patch: Partial<GuildBirthdayConfig>) => Promise<void>;
     onAddEntry: (entry: { userId: string; username: string; day: number; month: number }) => Promise<void>;
     onRemoveEntry: (userId: string) => Promise<void>;
-}> = ({ conf, channels, members, onChange, onAddEntry, onRemoveEntry }) => {
+}> = ({ conf, channels, roles, members, onChange, onAddEntry, onRemoveEntry }) => {
     const [pickUserId, setPickUserId] = useState("");
     const [pickDay, setPickDay] = useState<number>(1);
     const [pickMonth, setPickMonth] = useState<number>(1);
     const [search, setSearch] = useState("");
+
+    const selectedRoles = new Set(conf.mentionRoleIds ?? []);
+    const toggleRole = (id: string) => {
+        const next = new Set(selectedRoles);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        onChange({ mentionRoleIds: Array.from(next) });
+    };
 
     const card = conf.card ?? DEFAULT_BIRTHDAY_CARD;
     const template = conf.messageTemplate ?? DEFAULT_BIRTHDAY_MESSAGE_TEMPLATE;
@@ -2871,6 +2881,47 @@ const TabBirthday: React.FC<{
                     >
                         + Aggiungi compleanno
                     </button>
+                </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-neutral-100 mb-3 flex items-center gap-2">
+                    <Tag className="w-4 h-4 text-indigo-400" /> Ruoli da menzionare negli auguri
+                </h3>
+                <p className="text-xs text-neutral-500 mb-3">
+                    Questi ruoli vengono taggati insieme al messaggio di auguri a mezzanotte, così la
+                    notizia del compleanno arriva a tutti (es. ruolo "Membri").
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[280px] overflow-auto pr-2">
+                    {roles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
+                        const isSel = selectedRoles.has(r.id);
+                        return (
+                            <button
+                                key={r.id}
+                                onClick={() => toggleRole(r.id)}
+                                className={classNames(
+                                    "text-left px-3 py-2.5 rounded-xl border inline-flex items-center gap-3 transition-colors",
+                                    isSel ? "bg-[#5DADE2]/10 border-[#5DADE2]/40" : "bg-neutral-950 border-neutral-800 hover:bg-neutral-800"
+                                )}
+                            >
+                                <span
+                                    className="w-3.5 h-3.5 rounded-full shrink-0"
+                                    style={{ background: `#${r.color.toString(16).padStart(6, "0")}`, opacity: r.color === 0 ? 0.5 : 1 }}
+                                />
+                                <span className="truncate text-sm font-medium">{r.name}</span>
+                                <span className="flex-1" />
+                                <span className={classNames(
+                                    "w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0",
+                                    isSel ? "bg-[#5DADE2] border-[#5DADE2] text-[#0a1a26]" : "border-neutral-600"
+                                )}>
+                                    {isSel && "✓"}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="mt-3 text-xs text-neutral-500">
+                    {selectedRoles.size} ruolo/i selezionato/i.
                 </div>
             </div>
 
