@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+data/
+dashboard-dist/
+*.log
+.DS_Store
+pm2-*.log
+.vite/
+coverage/
+.temp/
+.cache/

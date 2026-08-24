@@ -1,0 +1,47 @@
+{
+    "name": "hermes-bot",
+    "version": "1.0.0",
+    "description": "Hermes - Bot Discord per la community Wolvesville (precedentemente Ade) + Dashboard di controllo",
+    "type": "module",
+    "main": "dist/index.js",
+    "scripts": {
+        "dev": "node --loader ts-node/esm src/index.ts",
+        "dev:dashboard": "vite --config dashboard/vite.config.ts",
+        "build": "tsc && vite build --config dashboard/vite.config.ts",
+        "build:bot": "tsc",
+        "build:dashboard": "vite build --config dashboard/vite.config.ts",
+        "start": "node --enable-source-maps dist/index.js",
+        "typecheck": "tsc --noEmit",
+        "pm2:start": "pm2 start dist/index.js --name hermes-bot",
+        "pm2:restart": "pm2 restart hermes-bot",
+        "pm2:logs": "pm2 logs hermes-bot"
+    },
+    "dependencies": {
+        "@discordjs/voice": "^0.19.2",
+        "@napi-rs/canvas": "^1.0.0",
+        "@snazzah/davey": "^0.1.9",
+        "discord.js": "^14.26.4",
+        "dotenv": "^16.4.5",
+        "express": "^4.21.2",
+        "ffmpeg-static": "^5.3.0",
+        "gtts": "^0.2.1",
+        "lucide-react": "^0.546.0",
+        "node-fetch": "^3.3.2",
+        "opusscript": "^0.0.8",
+        "pino": "^9.14.0",
+        "pino-pretty": "^13.1.3",
+        "prism-media": "^1.3.5",
+        "react": "^19.0.1",
+        "react-dom": "^19.0.1"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.1.14",
+        "@types/express": "^4.17.21",
+        "@types/node": "^20.14.0",
+        "@vitejs/plugin-react": "^5.0.4",
+        "tailwindcss": "^4.1.14",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.4.5",
+        "vite": "^6.2.3"
+    }
+}
