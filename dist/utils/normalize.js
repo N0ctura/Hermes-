@@ -1,0 +1,48 @@
+const UNICODE_BOLD_RANGES = [
+    [0x1d400, 0x1d419, 0x41],
+    [0x1d41a, 0x1d433, 0x61],
+    [0x1d434, 0x1d44d, 0x41],
+    [0x1d44e, 0x1d467, 0x61],
+    [0x1d468, 0x1d481, 0x41],
+    [0x1d482, 0x1d49b, 0x61],
+    [0x1d49c, 0x1d4b5, 0x41],
+    [0x1d4d0, 0x1d4e9, 0x41],
+    [0x1d4ea, 0x1d503, 0x61],
+    [0x1d504, 0x1d51d, 0x41],
+    [0x1d538, 0x1d551, 0x41],
+    [0x1d56c, 0x1d585, 0x41],
+    [0x1d586, 0x1d59f, 0x61],
+    [0x1d5a0, 0x1d5b9, 0x41],
+    [0x1d5ba, 0x1d5d3, 0x61],
+    [0x1d5d4, 0x1d5ed, 0x41],
+    [0x1d5ee, 0x1d607, 0x61],
+    [0x1d608, 0x1d621, 0x41],
+    [0x1d622, 0x1d63b, 0x61],
+    [0x1d63c, 0x1d655, 0x41],
+    [0x1d656, 0x1d66f, 0x61],
+    [0x1d670, 0x1d689, 0x41],
+    [0x1d68a, 0x1d6a3, 0x61],
+];
+function unicodeMathToAscii(str) {
+    const chars = [...str];
+    return chars
+        .map((ch) => {
+        const cp = ch.codePointAt(0);
+        for (const [start, end, base] of UNICODE_BOLD_RANGES) {
+            if (cp >= start && cp <= end) {
+                return String.fromCodePoint(base + (cp - start));
+            }
+        }
+        return ch;
+    })
+        .join("");
+}
+export function normalize(str) {
+    return unicodeMathToAscii(str)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[\u2018\u2019\u201a\u201b\u2032\u2035\u0060\u00b4]/g, "")
+        .replace(/[^a-z0-9]/g, "");
+}
+//# sourceMappingURL=normalize.js.map

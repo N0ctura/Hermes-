@@ -1,14 +1,22 @@
+# Dipendenze
 node_modules/
-dist/
+
+# Configurazioni private e credenziali (NON caricare mai su GitHub)
 .env
 .env.local
 .env.*.local
+
+# Dati locali e database (Rimangono solo sul server e sul PC)
 data/
-dashboard-dist/
+
+# Log e file temporanei
 *.log
-.DS_Store
 pm2-*.log
-.vite/
-coverage/
+.DS_Store
 .temp/
 .cache/
+coverage/
+
+# Rimosse dist/ e dashboard-dist/ per permettere a GitHub di salvarle
+# e non far crashare più il server di Sparked Host
+
