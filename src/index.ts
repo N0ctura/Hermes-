@@ -63,7 +63,7 @@ import * as esciCommand from "./commands/esci.js";
 import * as entrataAutomaticaCommand from "./commands/entrata-automatica.js";
 import { BOT_CONFIG } from "./utils/config.js";
 import { loadConfig, saveConfig, initStorage, type ActivePoll, type DeletedModifiedLog, type GuildLogsConfig } from "./utils/storage.js";
-import { schedulePollClose } from "./utils/poll-timer.js";
+import { closePoll, schedulePollClose } from "./utils/poll-timer.js";
 import { fetchPlayerByUsername, fetchClanById } from "./utils/wolvesville.js";
 import { generateProfileCard } from "./utils/profile-card.js";
 import { handleMemberJoin, handleMemberLeave } from "./utils/welcome-leave.js";
@@ -126,20 +126,18 @@ function isNetworkError(err: Error | null | undefined): boolean {
     return false;
 }
 
-function safeReplyEphemeral(interaction: any, content: string) {
-    Promise.resolve()
-        .then(async () => {
-            if (!interaction || typeof interaction.reply !== "function") return;
-            await interaction.reply({ content, flags: "Ephemeral" });
-        })
-        .catch((err) => {
-            const code = (err as any)?.code ?? 0;
-            if (code === 10062 || isNetworkError(err as Error)) {
-                logger.debug({ code }, "safeReplyEphemeral: interazione scaduta o rete down (non fatale)");
-            } else {
-                logger.warn({ err }, "safeReplyEphemeral: risposta fallita");
-            }
-        });
+async function safeReplyEphemeral(interaction: any, content: string): Promise<void> {
+    if (!interaction || typeof interaction.reply !== "function" || interaction.replied || interaction.deferred) return;
+    try {
+        await interaction.reply({ content, flags: "Ephemeral" });
+    } catch (err) {
+        const code = (err as any)?.code ?? 0;
+        if (code === 10062 || code === 40060 || isNetworkError(err as Error)) {
+            logger.debug({ code }, "safeReplyEphemeral: interazione già gestita, scaduta o rete down");
+        } else {
+            logger.warn({ err }, "safeReplyEphemeral: risposta fallita");
+        }
+    }
 }
 
 function safeExecute(fn: () => Promise<void>, label: string) {
@@ -403,7 +401,13 @@ export async function startBot(): Promise<void> {
             const poll = config.activePoll;
 
             if (!poll || !poll.messageIds.includes(interaction.message.id)) {
-                safeReplyEphemeral(interaction, "❌ Questo sondaggio non è più attivo.");
+                await safeReplyEphemeral(interaction, "❌ Questo sondaggio non è più attivo.");
+                return;
+            }
+
+            if (poll.closesAt && Date.now() >= new Date(poll.closesAt).getTime()) {
+                await safeReplyEphemeral(interaction, "❌ Questo sondaggio non è più attivo.");
+                void closePoll(client);
                 return;
             }
 
@@ -415,13 +419,13 @@ export async function startBot(): Promise<void> {
                 saveConfig(config);
                 await updatePollSummaryMessage(client, poll).catch(() => null);
                 const verb = isChange ? "🔄 **Voto aggiornato!** Hai votato per il" : "🔀 **Voto registrato!** Hai votato per il";
-                safeReplyEphemeral(interaction, `${verb} **Rimescolo**.`);
+                await safeReplyEphemeral(interaction, `${verb} **Rimescolo**.`);
                 return;
             }
 
             const selectedIdx = parseInt(value, 10);
             if (isNaN(selectedIdx) || selectedIdx < 0 || selectedIdx >= poll.questCount) {
-                safeReplyEphemeral(interaction, "❌ Scelta non valida.");
+                await safeReplyEphemeral(interaction, "❌ Scelta non valida.");
                 return;
             }
 
@@ -432,7 +436,7 @@ export async function startBot(): Promise<void> {
             const msg = isChange
                 ? `🔄 **Voto aggiornato!** Hai cambiato voto: **${label}**`
                 : `✅ **Voto registrato!** Hai votato: **${label}**`;
-            safeReplyEphemeral(interaction, msg);
+            await safeReplyEphemeral(interaction, msg);
             return;
         }
 
