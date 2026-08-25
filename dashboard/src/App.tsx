@@ -39,6 +39,7 @@ import {
     Coins,
     Inbox,
     Cake,
+    Menu,
 } from "lucide-react";
 import Login from "./pages/Login.js";
 import type {
@@ -61,6 +62,7 @@ import type {
     DiscordMember,
     ScheduledMessage,
     ClanOverviewDto,
+    GuildActivityDto,
 } from "./types.js";
 
 /* ===========================
@@ -1199,7 +1201,7 @@ const FieldColor: React.FC<{ label: string; value: string; onChange: (c: string)
  * APP MAIN
  * =========================== */
 
-type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "tts" | "logs" | "clan" | "joinRequests" | "profileCard" | "birthday";
+type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "tts" | "logs" | "activity" | "clan" | "joinRequests" | "profileCard" | "birthday";
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
     { key: "home", label: "Home", icon: LayoutDashboard },
@@ -1209,6 +1211,7 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
     { key: "messages", label: "Messaggi", icon: ListTodo },
     { key: "tts", label: "TTS", icon: Volume2 },
     { key: "logs", label: "Logs", icon: Activity },
+    { key: "activity", label: "Attività server", icon: TrendingUp },
     { key: "clan", label: "Clan Wolvesville", icon: Users },
     { key: "joinRequests", label: "Richieste Clan", icon: Inbox },
     { key: "profileCard", label: "Profile Card", icon: User },
@@ -1239,6 +1242,7 @@ export default function App() {
     const [profileCardConf, setProfileCardConf] = useState<GuildProfileCardConfig | null>(null);
     const [birthdayConf, setBirthdayConf] = useState<GuildBirthdayConfig | null>(null);
     const [guildMembers, setGuildMembers] = useState<DiscordMember[]>([]);
+    const [activity, setActivity] = useState<GuildActivityDto | null>(null);
 
     const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
     const [saving, setSaving] = useState(false);
@@ -1330,7 +1334,7 @@ export default function App() {
         if (!selectedGuildId) return;
         setLoading(true);
         try {
-            const [chs, rls, wl, tts, lg, sch, dml, jr, pc, bd, mbrs] = await Promise.all([
+            const [chs, rls, wl, tts, lg, sch, dml, jr, pc, bd, mbrs, act] = await Promise.all([
                 apiCall<DiscordChannel[]>(`/api/guilds/${selectedGuildId}/channels`),
                 apiCall<DiscordRole[]>(`/api/guilds/${selectedGuildId}/roles`),
                 apiCall<GuildWelcomeLeave>(`/api/module/welcome-leave/${selectedGuildId}`),
@@ -1342,6 +1346,7 @@ export default function App() {
                 apiCall<GuildProfileCardConfig>(`/api/module/profile-card/${selectedGuildId}`),
                 apiCall<GuildBirthdayConfig>(`/api/module/birthday/${selectedGuildId}`),
                 apiCall<DiscordMember[]>(`/api/guilds/${selectedGuildId}/members`),
+                apiCall<GuildActivityDto>(`/api/guilds/${selectedGuildId}/activity`),
             ]);
             setChannels(chs);
             setRoles(rls);
@@ -1354,6 +1359,7 @@ export default function App() {
             setProfileCardConf(pc);
             setBirthdayConf(bd);
             setGuildMembers(mbrs);
+            setActivity(act);
         } catch (e: any) {
             showToast("err", e?.message || "Errore caricamento moduli");
         } finally {
@@ -1597,9 +1603,9 @@ export default function App() {
      * ========================== */
 
     return (
-        <div className="h-screen flex bg-[#0D0906] text-[#EDE3C8] overflow-hidden">
+        <div className="hermes-app-shell h-screen flex bg-[#0D0906] text-[#EDE3C8] overflow-hidden">
             {/* Rail dei server: un medaglione per ogni server dove Ade è presente */}
-            <nav className="w-[72px] shrink-0 bg-[#0A0705] border-r border-[#241B12] flex flex-col items-center py-3 gap-2 overflow-y-auto">
+            <nav className="hermes-server-rail w-[72px] shrink-0 bg-[#0A0705] border-r border-[#241B12] flex flex-col items-center py-3 gap-2 overflow-y-auto">
                 {guilds.map((g) => {
                     const active = g.id === selectedGuildId;
                     return (
@@ -1649,7 +1655,7 @@ export default function App() {
             </nav>
 
             {/* Colonna sale: le sezioni di configurazione, come una lista di canali */}
-            <aside className="w-[248px] shrink-0 bg-[#15100B] border-r border-[#241B12] flex flex-col">
+            <aside className="hermes-nav-panel w-[248px] shrink-0 bg-[#15100B] border-r border-[#241B12] flex flex-col">
                 <div className="px-4 py-4 border-b border-[#241B12] flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-[#B8912A]/15 border border-[#B8912A]/40 flex items-center justify-center shrink-0">
                         <Sparkles className="w-4 h-4 text-[#E4C468]" />
@@ -1663,10 +1669,8 @@ export default function App() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-                    <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[#5C4E38]">
-                        Impostazioni
-                    </div>
-                    {TABS.map((t) => {
+                    <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[#5C4E38]">Generale</div>
+                    {TABS.slice(0, 8).map((t) => {
                         const active = tab === t.key;
                         const Icon = t.icon;
                         return (
@@ -1685,6 +1689,19 @@ export default function App() {
                             </button>
                         );
                     })}
+                    <div className="px-2.5 pt-5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[#5C4E38]">Clan</div>
+                    {TABS.slice(8).map((t) => {
+                        const active = tab === t.key;
+                        const Icon = t.icon;
+                        return (
+                            <button key={t.key} onClick={() => setTab(t.key)} className={classNames(
+                                "w-full text-left pl-3 pr-3 py-2 rounded-lg text-sm inline-flex items-center gap-2.5 transition-colors border-l-2",
+                                active ? "bg-[#B8912A]/12 border-[#B8912A] text-[#E4C468]" : "border-transparent text-[#B5A583] hover:bg-[#1C150E] hover:text-[#EDE3C8]"
+                            )}>
+                                <Icon className="w-4 h-4 shrink-0" /><span className="font-medium truncate">{t.label}</span>
+                            </button>
+                        );
+                    })}
                 </div>
 
                 <div className="p-2.5 border-t border-[#241B12] flex items-center gap-2">
@@ -1697,9 +1714,16 @@ export default function App() {
             </aside>
 
             {/* Contenuto della sezione selezionata */}
-            <main className="flex-1 min-w-0 overflow-y-auto">
+            <main className="hermes-main flex-1 min-w-0 overflow-y-auto">
+                <header className="hermes-topbar h-16 shrink-0 px-7 flex items-center gap-3 border-b border-[#241B12]">
+                    <Menu className="w-5 h-5 text-[#A8967A]" />
+                    <span className="font-display text-lg font-bold text-[#F1F1ED]">{TABS.find((item) => item.key === tab)?.label || "Home"}</span>
+                    <span className="text-xs text-[#7C6A4C]">— {guilds.find((g) => g.id === selectedGuildId)?.name || "Nessun server"}</span>
+                    <span className="flex-1" />
+                    <span className="hidden sm:inline-flex items-center gap-2 text-xs text-[#A8967A]"><span className="w-2 h-2 rounded-full bg-emerald-400" /> {status?.online ? "Online" : "Offline"}</span>
+                </header>
                 <div className="max-w-[1200px] mx-auto px-6 py-6">
-                    {tab === "home" && <TabHome status={status} />}
+                    {tab === "home" && <TabHome status={status} activity={activity} />}
                     {tab === "welcome" && wlConf && (
                         <TabWelcomeLeave
                             kind="welcome"
@@ -1734,6 +1758,7 @@ export default function App() {
                     {tab === "logs" && logsConf && (
                         <TabLogs conf={logsConf} channels={textChannels} onChange={saveLogs} entries={dmLogs} onRefresh={loadGuildData} />
                     )}
+                    {tab === "activity" && <ActivityChart activity={activity} fullPage />}
                     {tab === "clan" && (
                         <TabClan data={clanOverview} error={clanError} loading={clanLoading} onRefresh={loadClanOverview} />
                     )}
@@ -1786,7 +1811,7 @@ export default function App() {
  * TAB COMPONENTS
  * ========================== */
 
-const TabHome: React.FC<{ status: BotStatusDto | null }> = ({ status }) => {
+const TabHome: React.FC<{ status: BotStatusDto | null; activity: GuildActivityDto | null }> = ({ status, activity }) => {
     if (!status) return <EmptyState icon={Activity} title="Stato non disponibile" text="Ricarica tra pochi secondi..." />;
     const items: { label: string; value: string; icon: any; color: string }[] = [
         { label: "Uptime", value: formatUptime(status.uptimeSeconds), icon: Clock, color: "indigo" },
@@ -1796,9 +1821,12 @@ const TabHome: React.FC<{ status: BotStatusDto | null }> = ({ status }) => {
     ];
     return (
         <div className="space-y-5 animate-fade-in">
-            <div>
-                <h1 className="text-2xl font-black tracking-tight">Stato del bot</h1>
-                <p className="text-sm text-neutral-400 mt-1">Panoramica e modulo attivi sul server</p>
+            <div className="hermes-home-banner relative overflow-hidden border border-[#C9A227]/30 rounded-[10px] p-7 md:p-9">
+                <div className="relative z-10 max-w-2xl">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[#C9A227] font-bold">Χαῖρε — Bentornato, araldo</div>
+                    <h1 className="font-display text-2xl md:text-4xl font-black mt-3 text-[#F4F4F0]">Il regno di <em className="text-[#E8C458] not-italic">{status.guildsCount ? "Hermes" : "Hermes"}</em> attende il tuo comando</h1>
+                    <p className="text-sm text-[#BDBDB8] mt-3 max-w-xl">Plasma messaggi, ruoli e cerimonie del server dal tuo trono d'Olimpo digitale.</p>
+                </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {items.map((it) => {
@@ -1839,7 +1867,90 @@ const TabHome: React.FC<{ status: BotStatusDto | null }> = ({ status }) => {
                 <InfoCard title="Porta Dashboard" icon={Settings} value={`http://localhost:${status.port}`} desc="Apri questa URL nel browser per usare la dashboard" />
                 <InfoCard title="Piattaforma" icon={Server} value={status.platform} desc={`Avviato il ${new Date(status.startedAt).toLocaleString("it-IT")}`} />
             </div>
+
+            <ActivityChart activity={activity} />
         </div>
+    );
+};
+
+const ActivityChart: React.FC<{ activity: GuildActivityDto | null; fullPage?: boolean }> = ({ activity, fullPage = false }) => {
+    const [range, setRange] = useState<30 | 90 | 360>(30);
+    const days = (activity?.days ?? []).slice(-range);
+    const users = [...(activity?.users ?? [])].sort((a, b) => (b.messages + b.voiceSeconds / 3600) - (a.messages + a.voiceSeconds / 3600));
+    const maxMessages = Math.max(1, ...days.map((day) => Object.values(day.messages).reduce((sum, value) => sum + value, 0)));
+    const maxVoiceHours = Math.max(1, ...days.map((day) => Object.values(day.voiceSeconds).reduce((sum, value) => sum + value, 0) / 3600));
+    const totalMessages = users.reduce((sum, user) => sum + user.messages, 0);
+    const totalVoiceHours = users.reduce((sum, user) => sum + user.voiceSeconds, 0) / 3600;
+
+    return (
+        <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                    <h2 className="text-lg font-black tracking-tight flex items-center gap-2"><TrendingUp className="w-5 h-5 text-[#E4C468]" /> Attività server</h2>
+                    <p className="text-sm text-neutral-400 mt-1">Messaggi scritti e permanenza nei canali vocali di tutti gli utenti.</p>
+                </div>
+                <div className="flex items-center gap-1 p-1 bg-neutral-950 border border-neutral-800 rounded-lg">
+                    {[30, 90, 360].map((value) => (
+                        <button key={value} onClick={() => setRange(value as 30 | 90 | 360)} className={classNames("px-3 py-1.5 rounded-md text-xs font-bold transition-colors", range === value ? "bg-[#C9A227] text-[#1a1410]" : "text-neutral-400 hover:text-neutral-100")}>
+                            {value} giorni
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 md:max-w-md">
+                <Stat label="Messaggi nel periodo" value={totalMessages.toLocaleString("it-IT")} color="indigo" />
+                <Stat label="Ore in vocale" value={totalVoiceHours.toLocaleString("it-IT", { maximumFractionDigits: 1 })} color="amber" />
+            </div>
+
+            {days.length === 0 ? (
+                <EmptyState compact icon={Activity} title="Ancora nessuna attività" text="I dati verranno raccolti da ora in poi mentre gli utenti scrivono o entrano nei canali vocali." />
+            ) : (
+                <>
+                    <div className="overflow-x-auto pb-2">
+                        <div className="min-w-[620px] h-64 flex items-end gap-1.5 border-b border-neutral-800 px-2 pt-6">
+                            {days.map((day) => {
+                                const messages = Object.values(day.messages).reduce((sum, value) => sum + value, 0);
+                                const voiceHours = Object.values(day.voiceSeconds).reduce((sum, value) => sum + value, 0) / 3600;
+                                return (
+                                    <div key={day.date} className="h-full flex-1 min-w-2 flex items-end justify-center gap-0.5 group relative">
+                                        <div title={`${messages} messaggi`} className="w-1/2 max-w-3 rounded-t-sm bg-[#C9A227] transition-all group-hover:bg-[#F0D477]" style={{ height: `${Math.max(messages ? 3 : 0, (messages / maxMessages) * 100)}%` }} />
+                                        <div title={`${voiceHours.toLocaleString("it-IT", { maximumFractionDigits: 1 })} ore vocali`} className="w-1/2 max-w-3 rounded-t-sm bg-[#5DADE2] transition-all group-hover:bg-[#8BC8EA]" style={{ height: `${Math.max(voiceHours ? 3 : 0, (voiceHours / maxVoiceHours) * 100)}%` }} />
+                                        <span className="absolute top-full mt-2 text-[9px] text-neutral-600 whitespace-nowrap">{new Date(`${day.date}T12:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-neutral-400">
+                        <span className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-sm bg-[#C9A227]" /> Messaggi</span>
+                        <span className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-sm bg-[#5DADE2]" /> Ore vocali</span>
+                    </div>
+                    <div className="border-t border-neutral-800 pt-4">
+                        <h3 className="text-sm font-bold text-neutral-200 mb-3">Attività per utente</h3>
+                        {users.length === 0 ? <p className="text-xs text-neutral-500">Nessun utente registrato nel periodo.</p> : (
+                            <div className="space-y-2.5">
+                                {users.map((user) => {
+                                    const name = user.displayName || user.username || user.userId;
+                                    const messageWidth = totalMessages ? (user.messages / totalMessages) * 100 : 0;
+                                    const voiceWidth = totalVoiceHours ? (user.voiceSeconds / 3600 / totalVoiceHours) * 100 : 0;
+                                    return (
+                                        <div key={user.userId} className="grid grid-cols-[minmax(110px,1fr)_minmax(180px,2fr)_auto] items-center gap-3 text-xs">
+                                            <span className="truncate font-semibold text-neutral-200" title={name}>{name}</span>
+                                            <div className="space-y-1">
+                                                <div className="h-1.5 bg-neutral-950 rounded-full overflow-hidden"><div className="h-full bg-[#C9A227] rounded-full" style={{ width: `${messageWidth}%` }} /></div>
+                                                <div className="h-1.5 bg-neutral-950 rounded-full overflow-hidden"><div className="h-full bg-[#5DADE2] rounded-full" style={{ width: `${voiceWidth}%` }} /></div>
+                                            </div>
+                                            <span className="text-right text-neutral-400 whitespace-nowrap">{user.messages.toLocaleString("it-IT")} · {(user.voiceSeconds / 3600).toLocaleString("it-IT", { maximumFractionDigits: 1 })}h</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+        </section>
     );
 };
 

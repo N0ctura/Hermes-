@@ -156,6 +156,12 @@ export interface DeletedModifiedLog {
   deletedContent?: string;
 }
 
+export interface GuildActivityDay {
+  date: string;
+  messages: Record<string, number>;
+  voiceSeconds: Record<string, number>;
+}
+
 export interface GuildLogsConfig {
   guildId: string;
   guildName: string;
@@ -352,6 +358,7 @@ export interface BotConfig {
   birthdayConfigs?: GuildBirthdayConfig[];
   /** Data (YYYY-MM-DD, fuso Europe/Rome) dell'ultimo controllo compleanni eseguito dallo scheduler. */
   birthdayLastCheckedDate?: string;
+  activityHistory?: Record<string, GuildActivityDay[]>;
 }
 
 const DEFAULT_CONFIG: BotConfig = {
@@ -393,6 +400,7 @@ function normalizeConfig(config: Partial<BotConfig> | null | undefined): BotConf
     },
     profileCardConfigs: Array.isArray(config?.profileCardConfigs) ? config.profileCardConfigs : [],
     birthdayConfigs: Array.isArray(config?.birthdayConfigs) ? config.birthdayConfigs : [],
+    activityHistory: config?.activityHistory && typeof config.activityHistory === "object" ? config.activityHistory : {},
   };
 }
 

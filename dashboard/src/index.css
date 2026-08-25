@@ -1,5 +1,5 @@
-@import "tailwindcss";
 @import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
 
 /*
  * Tema "Celestial Elysium" — mitologia greca: oro antico, marmo, bordeaux.
@@ -49,6 +49,131 @@ body,
   color: #ede3c8;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+.hermes-app-shell {
+  position: relative;
+  isolation: isolate;
+  background: #0b0b0b !important;
+}
+
+.hermes-app-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 15% -10%, rgba(201, 162, 39, 0.14), transparent 62%),
+    radial-gradient(760px 520px at 100% 8%, rgba(255, 255, 255, 0.06), transparent 58%),
+    radial-gradient(900px 620px at 50% 120%, rgba(255, 255, 255, 0.035), transparent 62%),
+    #0b0b0b;
+}
+
+.hermes-app-shell::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+.hermes-server-rail,
+.hermes-nav-panel {
+  background: rgba(8, 8, 8, 0.9) !important;
+  border-color: rgba(201, 162, 39, 0.18) !important;
+}
+
+.hermes-server-rail {
+  width: 78px !important;
+  padding-top: 18px !important;
+}
+
+.hermes-nav-panel {
+  width: 252px !important;
+}
+
+.hermes-main {
+  background: rgba(11, 11, 11, 0.38);
+}
+
+.hermes-topbar {
+  background: rgba(8, 8, 8, 0.72);
+  backdrop-filter: blur(14px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.hermes-home-banner {
+  background:
+    linear-gradient(105deg, rgba(201, 162, 39, 0.13), transparent 55%),
+    linear-gradient(180deg, rgba(24, 24, 24, 0.96), rgba(14, 14, 14, 0.96));
+  min-height: 190px;
+}
+
+.hermes-home-banner::after {
+  content: "✦";
+  position: absolute;
+  right: 8%;
+  top: 18%;
+  color: rgba(244, 208, 111, 0.24);
+  font-family: Georgia, serif;
+  font-size: 150px;
+  line-height: 1;
+  transform: rotate(18deg);
+}
+
+.hermes-main > div {
+  max-width: 1280px !important;
+  padding: 32px 36px !important;
+}
+
+.hermes-main .bg-neutral-900 {
+  background: rgba(17, 17, 17, 0.88) !important;
+  border-color: rgba(201, 162, 39, 0.2) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.16);
+}
+
+.hermes-main .bg-neutral-950 {
+  background: rgba(5, 5, 5, 0.72) !important;
+}
+
+.hermes-main h1,
+.hermes-main h2,
+.hermes-main h3 {
+  color: #f1f1ed;
+}
+
+.hermes-main .border-neutral-800 {
+  border-color: rgba(201, 162, 39, 0.16) !important;
+}
+
+@media (max-width: 900px) {
+  .hermes-nav-panel {
+    width: 220px !important;
+  }
+
+  .hermes-main > div {
+    padding: 24px 20px !important;
+  }
+}
+
+@media (max-width: 680px) {
+  .hermes-server-rail {
+    width: 58px !important;
+  }
+
+  .hermes-nav-panel {
+    width: 190px !important;
+  }
+
+  .hermes-main > div {
+    padding: 20px 14px !important;
+  }
 }
 
 /* Titoli e brand in Cinzel per un tocco "tempio greco" */

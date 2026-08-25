@@ -225,6 +225,41 @@ export function stopTTS(guildId) {
     isPlaying.set(guildId, false);
     logger.info({ guildId }, "TTS: fermato e disconnesso");
 }
+
+export function isConnected(guildId) {
+    return connections.has(guildId);
+}
+
+export async function joinVoiceChannelManual(guildId, voiceChannelId, client) {
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild)
+        throw new Error("Server non trovato");
+    const voiceChannel = guild.channels.cache.get(voiceChannelId);
+    if (!voiceChannel)
+        throw new Error("Canale vocale non trovato");
+    const existing = connections.get(guildId);
+    if (existing && activeVoiceChannels.get(guildId) === voiceChannelId)
+        return;
+    if (existing) {
+        existing.destroy();
+        connections.delete(guildId);
+    }
+    const connection = joinVoiceChannel({
+        channelId: voiceChannel.id,
+        guildId,
+        adapterCreator: guild.voiceAdapterCreator,
+        selfDeaf: false,
+        selfMute: false,
+    });
+    connection.on(VoiceConnectionStatus.Ready, () => logger.info({ guildId }, "TTS: connessione vocale pronta (join manuale)"));
+    connection.on(VoiceConnectionStatus.Disconnected, () => {
+        connections.delete(guildId);
+        activeVoiceChannels.delete(guildId);
+    });
+    connections.set(guildId, connection);
+    activeVoiceChannels.set(guildId, voiceChannelId);
+    await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+}
 export async function playText(member, text, lang = "it") {
     const voiceChannelId = member.voice.channelId;
     if (!voiceChannelId) {

@@ -55,6 +55,7 @@ import { startWebServer } from "./server.js";
 import { startDonationTracker } from "./utils/donation-tracker.js";
 import { startJoinRequestTracker } from "./utils/join-request-tracker.js";
 import { startBirthdayScheduler } from "./utils/birthday-tracker.js";
+import { trackMessageActivity, trackVoiceState } from "./utils/activity-tracker.js";
 const commands = new Collection();
 commands.set(sondaggioCommand.data.name, sondaggioCommand);
 commands.set(impostazioniCommand.data.name, impostazioniCommand);
@@ -209,10 +210,19 @@ export async function startBot() {
         ],
         partials: [Partials.Message, Partials.Channel, Partials.GuildMember],
     });
+    let webServerStarted = false;
+    const ensureWebServer = async () => {
+        if (webServerStarted)
+            return;
+        webServerStarted = true;
+        await startWebServer(client).catch((err) => logger.error({ err }, "Errore avvio server dashboard"));
+    };
+    await initStorage();
+    await ensureWebServer();
     client.once("clientReady", async (c) => {
         logger.info({ tag: c.user.tag }, "Bot Discord connesso");
         setDiscordClient(c);
-        await startWebServer(c).catch((err) => logger.error({ err }, "Errore avvio server dashboard"));
+        await ensureWebServer();
         startDonationTracker(c);
         startJoinRequestTracker(c);
         startBirthdayScheduler(c);
@@ -349,6 +359,16 @@ export async function startBot() {
             logger.error({ err }, "Error in guildMemberRemove");
         }
     });
+    client.on("voiceStateUpdate", (oldState, newState) => {
+        if (oldState.channelId === newState.channelId)
+            return;
+        if (oldState.channelId && newState.channelId) {
+            trackVoiceState({ guildId: newState.guild.id, userId: newState.id, channelId: null });
+            trackVoiceState({ guildId: newState.guild.id, userId: newState.id, channelId: newState.channelId });
+            return;
+        }
+        trackVoiceState({ guildId: newState.guild.id, userId: newState.id, channelId: newState.channelId });
+    });
     client.on("interactionCreate", async (interaction) => {
         if (interaction.isStringSelectMenu() && interaction.customId === "vote_mission") {
             const value = interaction.values[0] ?? "";
@@ -465,6 +485,8 @@ export async function startBot() {
     client.on("messageCreate", async (message) => {
         if (message.author.bot)
             return;
+        if (message.guild)
+            trackMessageActivity(message.guild.id, message.author.id);
         const content = message.content.trim();
         const guildId = message.guild?.id;
         if (guildId && message.member) {
@@ -751,7 +773,6 @@ export async function startBot() {
     client.on("ready", () => {
         logger.debug("Evento ready ricevuto (deprecato, usare clientReady)");
     });
-    await initStorage();
     let loginAttempts = 0;
     const MAX_LOGIN_ATTEMPTS = 10;
     while (true) {

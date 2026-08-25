@@ -254,6 +254,26 @@ export interface BotStatusDto {
   startedAt: string;
 }
 
+export interface GuildActivityDay {
+  date: string;
+  messages: Record<string, number>;
+  voiceSeconds: Record<string, number>;
+}
+
+export interface GuildActivityUser {
+  userId: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  messages: number;
+  voiceSeconds: number;
+}
+
+export interface GuildActivityDto {
+  days: GuildActivityDay[];
+  users: GuildActivityUser[];
+}
+
 export interface BotConfigDto {
   pollChannelId?: string | null;
   notifyChannelIds: string[];

@@ -7,6 +7,7 @@ import { loadConfig, saveConfig, } from "./utils/storage.js";
 import { logger } from "./utils/logger.js";
 import { refreshBirthdayListMessage } from "./utils/birthday-list.js";
 import { fetchClanById, fetchClanMembers, fetchClanLog, fetchClanLedger } from "./utils/wolvesville.js";
+import { getGuildActivity } from "./utils/activity-tracker.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_PASSWORD = process.env["DASHBOARD_PASSWORD"] || "";
 const DASHBOARD_PORT = Number(process.env["DASHBOARD_PORT"] || process.env["PORT"] || 3000);
@@ -156,6 +157,26 @@ export async function startWebServer(discordClient) {
         catch (e) {
             res.status(500).json({ error: String(e) });
         }
+    });
+    app.get("/api/guilds/:id/activity", async (req, res) => {
+        const guild = discordClient.guilds.cache.get(req.params.id);
+        if (!guild)
+            return res.status(404).json({ error: "Guild non trovata" });
+        const activity = getGuildActivity(req.params.id);
+        const members = await guild.members.fetch().catch(() => null);
+        const names = new Map();
+        members?.forEach((member) => {
+            if (!member.user.bot)
+                names.set(member.id, {
+                    username: member.user.username,
+                    displayName: member.displayName,
+                    avatarUrl: member.user.displayAvatarURL({ extension: "png", size: 64 }),
+                });
+        });
+        res.json({
+            days: activity.days,
+            users: activity.users.map((user) => ({ ...user, ...names.get(user.userId) })),
+        });
     });
     /* ===== Helpers config ===== */
     function patchConfig(mutator) {

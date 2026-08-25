@@ -64,6 +64,7 @@ function normalizeConfig(config) {
         },
         profileCardConfigs: Array.isArray(config?.profileCardConfigs) ? config.profileCardConfigs : [],
         birthdayConfigs: Array.isArray(config?.birthdayConfigs) ? config.birthdayConfigs : [],
+        activityHistory: config?.activityHistory && typeof config.activityHistory === "object" ? config.activityHistory : {},
     };
 }
 let cache = { ...DEFAULT_CONFIG };
