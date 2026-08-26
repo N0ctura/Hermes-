@@ -445,6 +445,9 @@ function normalizeConfig(config: Partial<BotConfig> | null | undefined): BotConf
 let cache: BotConfig = { ...DEFAULT_CONFIG };
 let database: Pool | null = null;
 let databaseWriteQueue: Promise<void> = Promise.resolve();
+let pendingDatabaseJson: string | null = null;
+let persistedDatabaseJson: string | null = null;
+let databaseSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 function fileLoad(): BotConfig | null {
   if (!existsSync(CONFIG_FILE)) return null;
@@ -474,12 +477,32 @@ async function databaseLoad(): Promise<BotConfig | null> {
 
 async function databaseSave(config: BotConfig): Promise<void> {
   if (!database) return;
+  const configJson = JSON.stringify(config);
+  if (configJson === persistedDatabaseJson) return;
   await database.query(
     `INSERT INTO ${DATABASE_TABLE} (state_key, config_json, updated_at)
      VALUES ('config', ?, CURRENT_TIMESTAMP)
      ON DUPLICATE KEY UPDATE config_json = VALUES(config_json), updated_at = CURRENT_TIMESTAMP`,
-    [JSON.stringify(config)],
+    [configJson],
   );
+  persistedDatabaseJson = configJson;
+}
+
+function scheduleDatabaseSave(config: BotConfig): void {
+  if (!database) return;
+  pendingDatabaseJson = JSON.stringify(config);
+  if (pendingDatabaseJson === persistedDatabaseJson || databaseSaveTimer) return;
+
+  databaseSaveTimer = setTimeout(() => {
+    databaseSaveTimer = null;
+    const configJson = pendingDatabaseJson;
+    pendingDatabaseJson = null;
+    if (!configJson || configJson === persistedDatabaseJson) return;
+
+    databaseWriteQueue = databaseWriteQueue
+      .then(() => databaseSave(JSON.parse(configJson) as BotConfig))
+      .catch((err) => logger.warn({ err }, "storage: impossibile salvare nel database"));
+  }, 250);
 }
 
 export async function initStorage(): Promise<void> {
@@ -503,6 +526,7 @@ export async function initStorage(): Promise<void> {
       const databaseConfig = await databaseLoad();
       if (databaseConfig) {
         cache = normalizeConfig(databaseConfig);
+        persistedDatabaseJson = JSON.stringify(cache);
         fileSave(cache);
         logger.info("storage: config caricata dal database MySQL/MariaDB ✅");
         return;
@@ -540,9 +564,7 @@ export function loadConfig(): BotConfig {
 export function saveConfig(config: BotConfig): void {
   cache = normalizeConfig(config);
   fileSave(cache);
-  databaseWriteQueue = databaseWriteQueue
-    .then(() => databaseSave(cache))
-    .catch((err) => logger.warn({ err }, "storage: impossibile salvare nel database"));
+  scheduleDatabaseSave(cache);
 }
 
 export function getMessages(config: BotConfig): BotMessages {

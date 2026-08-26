@@ -108,6 +108,9 @@ function normalizeConfig(config) {
 let cache = { ...DEFAULT_CONFIG };
 let database = null;
 let databaseWriteQueue = Promise.resolve();
+let pendingDatabaseJson = null;
+let persistedDatabaseJson = null;
+let databaseSaveTimer = null;
 function fileLoad() {
     if (!existsSync(CONFIG_FILE))
         return null;
@@ -140,9 +143,30 @@ async function databaseLoad() {
 async function databaseSave(config) {
     if (!database)
         return;
+    const configJson = JSON.stringify(config);
+    if (configJson === persistedDatabaseJson)
+        return;
     await database.query(`INSERT INTO ${DATABASE_TABLE} (state_key, config_json, updated_at)
      VALUES ('config', ?, CURRENT_TIMESTAMP)
-     ON DUPLICATE KEY UPDATE config_json = VALUES(config_json), updated_at = CURRENT_TIMESTAMP`, [JSON.stringify(config)]);
+     ON DUPLICATE KEY UPDATE config_json = VALUES(config_json), updated_at = CURRENT_TIMESTAMP`, [configJson]);
+    persistedDatabaseJson = configJson;
+}
+function scheduleDatabaseSave(config) {
+    if (!database)
+        return;
+    pendingDatabaseJson = JSON.stringify(config);
+    if (pendingDatabaseJson === persistedDatabaseJson || databaseSaveTimer)
+        return;
+    databaseSaveTimer = setTimeout(() => {
+        databaseSaveTimer = null;
+        const configJson = pendingDatabaseJson;
+        pendingDatabaseJson = null;
+        if (!configJson || configJson === persistedDatabaseJson)
+            return;
+        databaseWriteQueue = databaseWriteQueue
+            .then(() => databaseSave(JSON.parse(configJson)))
+            .catch((err) => logger.warn({ err }, "storage: impossibile salvare nel database"));
+    }, 250);
 }
 export async function initStorage() {
     logger.info({
@@ -164,6 +188,7 @@ export async function initStorage() {
             const databaseConfig = await databaseLoad();
             if (databaseConfig) {
                 cache = normalizeConfig(databaseConfig);
+                persistedDatabaseJson = JSON.stringify(cache);
                 fileSave(cache);
                 logger.info("storage: config caricata dal database MySQL/MariaDB ✅");
                 return;
@@ -199,9 +224,7 @@ export function loadConfig() {
 export function saveConfig(config) {
     cache = normalizeConfig(config);
     fileSave(cache);
-    databaseWriteQueue = databaseWriteQueue
-        .then(() => databaseSave(cache))
-        .catch((err) => logger.warn({ err }, "storage: impossibile salvare nel database"));
+    scheduleDatabaseSave(cache);
 }
 export function getMessages(config) {
     return { ...DEFAULT_MESSAGES, ...config.messages };
