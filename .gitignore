@@ -1,6 +1,7 @@
 # Dipendenze
 node_modules/
 .npm/
+.npmrc
 
 # Configurazioni private e credenziali (NON caricare mai su GitHub)
 .env
