@@ -1,6 +1,8 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import "dotenv/config";
+import mysql, { type Pool } from "mysql2/promise";
 import { logger } from "./logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -9,6 +11,42 @@ const DATA_DIR =
   process.env["DATA_DIR"] ??
   join(dirname(dirname(__dirname)), "data");
 const CONFIG_FILE = join(DATA_DIR, "bot-config.json");
+const DATABASE_TABLE = "hermes_state";
+
+function createDatabasePool(): Pool | null {
+  const databaseUrl = process.env["DATABASE_URL"];
+  if (databaseUrl) {
+    try {
+      const url = new URL(databaseUrl);
+      return mysql.createPool({
+        host: url.hostname,
+        port: Number(url.port || 3306),
+        user: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password),
+        database: decodeURIComponent(url.pathname.replace(/^\//, "")),
+        connectionLimit: 3,
+        enableKeepAlive: true,
+      });
+    } catch (err) {
+      logger.warn({ err }, "storage: DATABASE_URL non valida, uso il file locale");
+      return null;
+    }
+  }
+
+  const host = process.env["DB_HOST"];
+  const user = process.env["DB_USER"];
+  const database = process.env["DB_NAME"];
+  if (!host || !user || !database) return null;
+  return mysql.createPool({
+    host,
+    port: Number(process.env["DB_PORT"] || 3306),
+    user,
+    password: process.env["DB_PASSWORD"] || "",
+    database,
+    connectionLimit: 3,
+    enableKeepAlive: true,
+  });
+}
 
 export interface ActivePoll {
   channelId: string;
@@ -405,6 +443,8 @@ function normalizeConfig(config: Partial<BotConfig> | null | undefined): BotConf
 }
 
 let cache: BotConfig = { ...DEFAULT_CONFIG };
+let database: Pool | null = null;
+let databaseWriteQueue: Promise<void> = Promise.resolve();
 
 function fileLoad(): BotConfig | null {
   if (!existsSync(CONFIG_FILE)) return null;
@@ -424,6 +464,24 @@ function fileSave(config: BotConfig): void {
   }
 }
 
+async function databaseLoad(): Promise<BotConfig | null> {
+  if (!database) return null;
+  const [rows] = await database.query(`SELECT config_json FROM ${DATABASE_TABLE} WHERE state_key = 'config' LIMIT 1`);
+  const configJson = (rows as Array<{ config_json?: string }>)[0]?.config_json;
+  if (!configJson) return null;
+  return JSON.parse(configJson) as BotConfig;
+}
+
+async function databaseSave(config: BotConfig): Promise<void> {
+  if (!database) return;
+  await database.query(
+    `INSERT INTO ${DATABASE_TABLE} (state_key, config_json, updated_at)
+     VALUES ('config', ?, CURRENT_TIMESTAMP)
+     ON DUPLICATE KEY UPDATE config_json = VALUES(config_json), updated_at = CURRENT_TIMESTAMP`,
+    [JSON.stringify(config)],
+  );
+}
+
 export async function initStorage(): Promise<void> {
   logger.info({
     DATA_DIR,
@@ -432,15 +490,46 @@ export async function initStorage(): Promise<void> {
     fileExists: existsSync(CONFIG_FILE),
   }, "storage: percorso configurazione");
 
+  database = createDatabasePool();
+  if (database) {
+    try {
+      await database.query(`
+        CREATE TABLE IF NOT EXISTS ${DATABASE_TABLE} (
+          state_key VARCHAR(64) PRIMARY KEY,
+          config_json LONGTEXT NOT NULL,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+      `);
+      const databaseConfig = await databaseLoad();
+      if (databaseConfig) {
+        cache = normalizeConfig(databaseConfig);
+        fileSave(cache);
+        logger.info("storage: config caricata dal database MySQL/MariaDB ✅");
+        return;
+      }
+
+      const fileConfig = fileLoad();
+      cache = normalizeConfig(fileConfig ?? DEFAULT_CONFIG);
+      await databaseSave(cache);
+      logger.info(fileConfig
+        ? "storage: config locale migrata nel database MySQL/MariaDB ✅"
+        : "storage: database pronto, avvio con valori predefiniti");
+      return;
+    } catch (err) {
+      logger.warn({ err }, "storage: database non raggiungibile, uso il file locale");
+      await database.end().catch(() => undefined);
+      database = null;
+    }
+  }
+
   const fileConfig = fileLoad();
   if (fileConfig) {
     cache = normalizeConfig(fileConfig);
     logger.info("storage: config caricata dal file locale ✅");
-    return;
+  } else {
+    cache = { ...DEFAULT_CONFIG };
+    logger.info("storage: nessuna config trovata — avvio con valori predefiniti");
   }
-
-  cache = { ...DEFAULT_CONFIG };
-  logger.info("storage: nessuna config trovata — avvio con valori predefiniti");
 }
 
 export function loadConfig(): BotConfig {
@@ -451,6 +540,9 @@ export function loadConfig(): BotConfig {
 export function saveConfig(config: BotConfig): void {
   cache = normalizeConfig(config);
   fileSave(cache);
+  databaseWriteQueue = databaseWriteQueue
+    .then(() => databaseSave(cache))
+    .catch((err) => logger.warn({ err }, "storage: impossibile salvare nel database"));
 }
 
 export function getMessages(config: BotConfig): BotMessages {
