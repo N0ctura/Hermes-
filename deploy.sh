@@ -23,7 +23,10 @@ fi
 
 echo "▶ [1/5] Pull ultimo codice da git..."
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  git pull --ff-only
+  git pull --ff-only || {
+    echo "❌ Git pull fallito: deploy interrotto per evitare di avviare codice non aggiornato."
+    exit 1
+  }
 else
   echo "⚠️  Non è una repo git — salto il pull."
 fi

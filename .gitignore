@@ -1,5 +1,6 @@
 # Dipendenze
 node_modules/
+.npm/
 
 # Configurazioni private e credenziali (NON caricare mai su GitHub)
 .env

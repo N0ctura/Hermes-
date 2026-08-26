@@ -154,6 +154,13 @@ function formatDate(dateStr) {
         return "Sconosciuta";
     return new Date(dateStr).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
+function redactSensitiveContent(content) {
+    if (!content)
+        return content;
+    return content
+        .replace(/(DISCORD_BOT_TOKEN|WOLVESVILLE_API_KEY|WOLVESVILLE_PERSONAL_API_KEY|DASHBOARD_PASSWORD)\s*[:=]\s*[^\s\r\n]+/gi, "$1=[REDACTED]")
+        .replace(/\b\d{17,20}\.[A-Za-z0-9_-]{4,8}\.[A-Za-z0-9_-]{20,}\b/g, "[DISCORD_TOKEN_REDACTED]");
+}
 function buildPollSummaryText(poll) {
     const votes = poll.votes ?? {};
     const counts = new Array(poll.questCount).fill(0);
@@ -642,10 +649,16 @@ export async function startBot() {
         });
     }
     async function handleLog(logEntry) {
+        const safeLogEntry = {
+            ...logEntry,
+            oldContent: redactSensitiveContent(logEntry.oldContent),
+            newContent: redactSensitiveContent(logEntry.newContent),
+            deletedContent: redactSensitiveContent(logEntry.deletedContent),
+        };
         const config = loadConfig();
-        const logsConfig = getGuildLogsConfig(logEntry.guildId);
+        const logsConfig = getGuildLogsConfig(safeLogEntry.guildId);
         const logs = config.deletedModifiedLogs ?? [];
-        logs.unshift(logEntry);
+        logs.unshift(safeLogEntry);
         const trimmedLogs = logs.slice(0, 100);
         saveConfig({ ...config, deletedModifiedLogs: trimmedLogs });
         if (logsConfig.enabled && logsConfig.channelId) {
@@ -653,23 +666,23 @@ export async function startBot() {
             if (channel) {
                 try {
                     const embed = new EmbedBuilder()
-                        .setColor(logEntry.type === "deleted" ? 0xed4245 : 0xfee75c)
-                        .setTitle(logEntry.type === "deleted" ? "🗑️ Messaggio Eliminato" : "✏️ Messaggio Modificato")
+                        .setColor(safeLogEntry.type === "deleted" ? 0xed4245 : 0xfee75c)
+                        .setTitle(safeLogEntry.type === "deleted" ? "🗑️ Messaggio Eliminato" : "✏️ Messaggio Modificato")
                         .setAuthor({
-                        name: logEntry.author.username,
-                        iconURL: logEntry.author.avatar,
+                        name: safeLogEntry.author.username,
+                        iconURL: safeLogEntry.author.avatar,
                     })
-                        .addFields({ name: "Canale", value: `<#${logEntry.channelId}>`, inline: true }, { name: "Data", value: `<t:${Math.floor(new Date(logEntry.timestamp).getTime() / 1000)}:F>`, inline: true })
+                        .addFields({ name: "Canale", value: `<#${safeLogEntry.channelId}>`, inline: true }, { name: "Data", value: `<t:${Math.floor(new Date(safeLogEntry.timestamp).getTime() / 1000)}:F>`, inline: true })
                         .setTimestamp();
-                    if (logEntry.type === "deleted" && logEntry.deletedContent) {
-                        embed.addFields({ name: "Contenuto Eliminato", value: logEntry.deletedContent.length > 1024 ? logEntry.deletedContent.substring(0, 1021) + "..." : logEntry.deletedContent });
+                    if (safeLogEntry.type === "deleted" && safeLogEntry.deletedContent) {
+                        embed.addFields({ name: "Contenuto Eliminato", value: safeLogEntry.deletedContent.length > 1024 ? safeLogEntry.deletedContent.substring(0, 1021) + "..." : safeLogEntry.deletedContent });
                     }
-                    else if (logEntry.type === "modified") {
-                        if (logEntry.oldContent) {
-                            embed.addFields({ name: "Prima", value: logEntry.oldContent.length > 1024 ? logEntry.oldContent.substring(0, 1021) + "..." : logEntry.oldContent });
+                    else if (safeLogEntry.type === "modified") {
+                        if (safeLogEntry.oldContent) {
+                            embed.addFields({ name: "Prima", value: safeLogEntry.oldContent.length > 1024 ? safeLogEntry.oldContent.substring(0, 1021) + "..." : safeLogEntry.oldContent });
                         }
-                        if (logEntry.newContent) {
-                            embed.addFields({ name: "Dopo", value: logEntry.newContent.length > 1024 ? logEntry.newContent.substring(0, 1021) + "..." : logEntry.newContent });
+                        if (safeLogEntry.newContent) {
+                            embed.addFields({ name: "Dopo", value: safeLogEntry.newContent.length > 1024 ? safeLogEntry.newContent.substring(0, 1021) + "..." : safeLogEntry.newContent });
                         }
                     }
                     await channel.send({ embeds: [embed] });
