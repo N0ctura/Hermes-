@@ -27,9 +27,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DASHBOARD_PASSWORD = process.env["DASHBOARD_PASSWORD"] || "";
 const DASHBOARD_PORT = Number(process.env["DASHBOARD_PORT"] || process.env["PORT"] || 3000);
+const DASHBOARD_TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 const startedAt = new Date();
 
-const tokens = new Set<string>();
+const tokens = new Map<string, number>();
 
 type AppRequest = Request & {
   __hermesAuth?: boolean;
@@ -46,9 +47,13 @@ function authMiddleware(req: AppRequest, res: Response, next: NextFunction) {
   }
   const header = req.header("Authorization") || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (token && tokens.has(token)) {
-    req.__hermesAuth = true;
-    return next();
+  if (token) {
+    const expiresAt = tokens.get(token);
+    if (expiresAt && expiresAt > Date.now()) {
+      req.__hermesAuth = true;
+      return next();
+    }
+    tokens.delete(token);
   }
   // Cookie / query per le richieste GET browser? Per ora basta header.
   res.status(401).json({ error: "Autenticazione richiesta" });
@@ -78,7 +83,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       return res.status(401).json({ ok: false, error: "Password errata" });
     }
     const tok = makeToken();
-    tokens.add(tok);
+    tokens.set(tok, Date.now() + DASHBOARD_TOKEN_TTL_MS);
     return res.json({ ok: true, token: tok });
   });
 

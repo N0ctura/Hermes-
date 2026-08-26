@@ -88,6 +88,13 @@ function formatUptime(s: number) {
     return `${sec}s`;
 }
 
+function toLocalDateTimeInput(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const offset = date.getTimezoneOffset();
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 /* Default card templates */
 const DEFAULT_WELCOME_CARD: CardConfig = {
     width: 1440,
@@ -1334,7 +1341,7 @@ export default function App() {
         if (!selectedGuildId) return;
         setLoading(true);
         try {
-            const [chs, rls, wl, tts, lg, sch, dml, jr, pc, bd, mbrs, act] = await Promise.all([
+            const results = await Promise.allSettled([
                 apiCall<DiscordChannel[]>(`/api/guilds/${selectedGuildId}/channels`),
                 apiCall<DiscordRole[]>(`/api/guilds/${selectedGuildId}/roles`),
                 apiCall<GuildWelcomeLeave>(`/api/module/welcome-leave/${selectedGuildId}`),
@@ -1348,20 +1355,22 @@ export default function App() {
                 apiCall<DiscordMember[]>(`/api/guilds/${selectedGuildId}/members`),
                 apiCall<GuildActivityDto>(`/api/guilds/${selectedGuildId}/activity`),
             ]);
-            setChannels(chs);
-            setRoles(rls);
-            setWlConf(wl);
-            setTtsConf(tts);
-            setLogsConf(lg);
-            setScheduled(sch);
-            setDmLogs(dml);
-            setJoinReqConf(jr);
-            setProfileCardConf(pc);
-            setBirthdayConf(bd);
-            setGuildMembers(mbrs);
-            setActivity(act);
-        } catch (e: any) {
-            showToast("err", e?.message || "Errore caricamento moduli");
+            const [chs, rls, wl, tts, lg, sch, dml, jr, pc, bd, mbrs, act] = results;
+            if (chs.status === "fulfilled") setChannels(chs.value);
+            if (rls.status === "fulfilled") setRoles(rls.value);
+            if (wl.status === "fulfilled") setWlConf(wl.value);
+            if (tts.status === "fulfilled") setTtsConf(tts.value);
+            if (lg.status === "fulfilled") setLogsConf(lg.value);
+            if (sch.status === "fulfilled") setScheduled(sch.value);
+            if (dml.status === "fulfilled") setDmLogs(dml.value);
+            if (jr.status === "fulfilled") setJoinReqConf(jr.value);
+            if (pc.status === "fulfilled") setProfileCardConf(pc.value);
+            if (bd.status === "fulfilled") setBirthdayConf(bd.value);
+            if (mbrs.status === "fulfilled") setGuildMembers(mbrs.value);
+            if (act.status === "fulfilled") setActivity(act.value);
+
+            const failed = results.filter((result) => result.status === "rejected").length;
+            if (failed > 0) showToast("err", `${failed} modulo/i non disponibili al momento`);
         } finally {
             setLoading(false);
         }
@@ -1423,6 +1432,7 @@ export default function App() {
             });
             showToast("ok", "Welcome / Leave salvati");
         } catch (e: any) {
+            setWlConf(wlConf);
             showToast("err", e?.message || "Salvataggio fallito");
         } finally {
             setSaving(false);
@@ -1441,6 +1451,7 @@ export default function App() {
             });
             showToast("ok", "Configurazione TTS salvata");
         } catch (e: any) {
+            setTtsConf(ttsConf);
             showToast("err", e?.message || "Salvataggio fallito");
         } finally {
             setSaving(false);
@@ -1459,6 +1470,7 @@ export default function App() {
             });
             showToast("ok", "Config Logs salvata");
         } catch (e: any) {
+            setLogsConf(logsConf);
             showToast("err", e?.message || "Salvataggio fallito");
         } finally {
             setSaving(false);
@@ -1477,6 +1489,7 @@ export default function App() {
             });
             showToast("ok", "Config Richieste Clan salvata");
         } catch (e: any) {
+            setJoinReqConf(joinReqConf);
             showToast("err", e?.message || "Salvataggio fallito");
         } finally {
             setSaving(false);
@@ -1495,6 +1508,7 @@ export default function App() {
             });
             showToast("ok", "Profile Card salvata");
         } catch (e: any) {
+            setProfileCardConf(profileCardConf);
             showToast("err", e?.message || "Salvataggio fallito");
         } finally {
             setSaving(false);
@@ -1514,6 +1528,7 @@ export default function App() {
             setBirthdayConf(saved);
             showToast("ok", "Config Compleanni salvata");
         } catch (e: any) {
+            setBirthdayConf(birthdayConf);
             showToast("err", e?.message || "Salvataggio fallito");
         } finally {
             setSaving(false);
@@ -2151,7 +2166,7 @@ const TabScheduled: React.FC<{
         message: "",
         isRecurring: true,
         recurrenceInterval: "daily",
-        scheduledTime: new Date(Date.now() + 60_000).toISOString().slice(0, 16),
+        scheduledTime: new Date(Date.now() + 60_000).toISOString(),
         enabled: true,
         createdAt: new Date().toISOString(),
     });
@@ -2272,7 +2287,7 @@ const ScheduledModal: React.FC<{
                             </label>
                             <input
                                 type="datetime-local"
-                                value={m.scheduledTime.slice(0, 16)}
+                                value={toLocalDateTimeInput(m.scheduledTime)}
                                 onChange={(e) => setM({ ...m, scheduledTime: new Date(e.target.value).toISOString() })}
                                 className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm"
                             />

@@ -275,7 +275,9 @@ export async function startBot(): Promise<void> {
                         } else if (msg.recurrenceInterval === 'weekly') {
                             shouldSend = timeDiff >= 7 * oneDay;
                         } else if (msg.recurrenceInterval === 'monthly') {
-                            shouldSend = timeDiff >= 30 * oneDay;
+                            const nextMonthly = new Date(lastSent);
+                            nextMonthly.setMonth(nextMonthly.getMonth() + 1);
+                            shouldSend = now >= nextMonthly;
                         }
                     }
 
@@ -528,6 +530,7 @@ export async function startBot(): Promise<void> {
                 guildId,
                 channelId: message.channel.id,
                 content,
+                attachments: message.attachments.values(),
                 member: message.member as GuildMember,
                 client,
             });

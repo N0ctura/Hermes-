@@ -419,6 +419,7 @@ export async function handleMessageForTTS(message: {
   guildId: string;
   channelId: string;
   content: string;
+  attachments: Iterable<{ contentType?: string | null; name?: string | null; url?: string }>;
   member: GuildMember;
   client: Client;
 }): Promise<void> {
@@ -427,8 +428,15 @@ export async function handleMessageForTTS(message: {
   let shouldSpeak = false;
   let textToSpeak = "";
   let announceUsername = false;
+  let imageAnnouncement = false;
 
   const userVoiceChannelId = message.member.voice.channelId;
+  const botVoiceChannelId = message.member.guild.members.me?.voice.channelId ?? activeVoiceChannels.get(message.guildId);
+
+  // Il TTS è legato alla conversazione vocale: un utente in un altro canale non
+  // deve poter attivare il bot, anche se scrive nella chat testuale configurata.
+  if (!userVoiceChannelId || !botVoiceChannelId || userVoiceChannelId !== botVoiceChannelId) return;
+
   // Di default l'auto-join è attivo insieme al TTS generale, a meno che non sia
   // stato esplicitamente disattivato da dashboard/comando /entrata-automatica.
   const autoJoinEnabled = ttsConfig.ttsAutoJoinEnabled ?? true;
@@ -457,6 +465,7 @@ export async function handleMessageForTTS(message: {
     textToSpeak = message.content;
     announceUsername = true;
   } else {
+    if (!ttsConfig.ttsEnabled) return;
     for (const prefix of ttsConfig.ttsPrefixes!) {
       if (message.content.startsWith(prefix)) {
         shouldSpeak = true;
@@ -471,7 +480,19 @@ export async function handleMessageForTTS(message: {
   // non deve far partire il TTS a vuoto.
   textToSpeak = sanitizeTextForTTS(textToSpeak);
 
-  if (!shouldSpeak || !textToSpeak) {
+  const imageCount = Array.from(message.attachments).filter((attachment) => {
+    const contentType = attachment.contentType?.toLowerCase();
+    if (contentType?.startsWith("image/")) return true;
+    const name = attachment.name ?? attachment.url ?? "";
+    return /\.(avif|gif|jpe?g|png|webp)$/i.test(name.split("?")[0] ?? "");
+  }).length;
+
+  if (imageCount > 0) {
+    imageAnnouncement = true;
+    textToSpeak = textToSpeak ? "ha mandato testo piu foto" : "manda una foto";
+  }
+
+  if (!shouldSpeak || (!textToSpeak && imageCount === 0)) {
     return;
   }
 
@@ -490,7 +511,7 @@ export async function handleMessageForTTS(message: {
   // se lo stesso utente scrive più messaggi consecutivi, dal secondo in poi si
   // legge solo la frase, senza ripetere "nickname dice:" ogni volta.
   const isSameSpeakerAsBefore = lastAnnouncedSpeaker.get(message.guildId) === message.member.id;
-  const shouldAnnounceName = announceUsername && !isSameSpeakerAsBefore;
+  const shouldAnnounceName = imageAnnouncement || (announceUsername && !isSameSpeakerAsBefore);
 
   const cleanUsername = shouldAnnounceName
     ? removeEmojis(message.member.displayName || message.member.user.username)
@@ -500,7 +521,11 @@ export async function handleMessageForTTS(message: {
     lastAnnouncedSpeaker.set(message.guildId, message.member.id);
   }
 
-  const fullText = cleanUsername ? `${cleanUsername} dice: ${textToSpeak}` : textToSpeak;
+  const fullText = cleanUsername
+    ? imageAnnouncement
+      ? `${cleanUsername} ${textToSpeak}`
+      : `${cleanUsername} dice: ${textToSpeak}`
+    : textToSpeak;
 
   logger.debug({ guildId: message.guildId, text: fullText }, "TTS: nuovo messaggio da leggere");
 
