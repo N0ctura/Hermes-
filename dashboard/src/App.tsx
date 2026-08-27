@@ -489,6 +489,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
         const dpr = window.devicePixelRatio || 1;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
+        const canvasContext = ctx;
         canvas.width = card.width * dpr;
         canvas.height = card.height * dpr;
         // Non impostiamo canvas.style.width/height in px fissi: lo fa il CSS
@@ -565,16 +566,16 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                         }
                     }
                     if (img && img.complete && img.naturalWidth > 0) {
-                        ctx.drawImage(img, x, y, w, h);
+                        canvasContext.drawImage(img, x, y, w, h);
                         if (needGrayscale) applyGrayscaleArea(x, y, w, h);
                         return true;
                     }
-                    ctx.fillStyle = fallbackColor || "#2A2116";
-                    ctx.fillRect(x, y, w, h);
-                    ctx.fillStyle = "#A8967A";
-                    ctx.font = "16px sans-serif";
-                    ctx.textAlign = "center";
-                    ctx.fillText(
+                    canvasContext.fillStyle = fallbackColor || "#2A2116";
+                    canvasContext.fillRect(x, y, w, h);
+                    canvasContext.fillStyle = "#A8967A";
+                    canvasContext.font = "16px sans-serif";
+                    canvasContext.textAlign = "center";
+                    canvasContext.fillText(
                         "Caricamento immagine...",
                         x + w / 2,
                         y + h / 2
@@ -584,8 +585,8 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ card, onChange, type }) => 
                     /* fallthrough to color */
                 }
             }
-            ctx.fillStyle = fallbackColor || "#201A13";
-            ctx.fillRect(x, y, w, h);
+            canvasContext.fillStyle = fallbackColor || "#201A13";
+            canvasContext.fillRect(x, y, w, h);
             return false;
         }
 
