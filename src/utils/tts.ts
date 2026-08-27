@@ -45,6 +45,7 @@ const players: Map<string, AudioPlayer> = new Map();
 const queues: Map<string, string[]> = new Map();
 const isPlaying: Map<string, boolean> = new Map();
 const activeVoiceChannels: Map<string, string> = new Map();
+const autoJoinInProgress = new Set<string>();
 // Ultimo utente per cui è stato annunciato il nome ("nickname dice: ..."), per guild.
 // Serve per evitare di ripetere "nickname dice" ad ogni messaggio quando è sempre
 // la stessa persona a scrivere di fila.
@@ -489,7 +490,10 @@ export async function handleMessageForTTS(message: {
 
   if (imageCount > 0) {
     imageAnnouncement = true;
-    textToSpeak = textToSpeak ? "ha mandato testo piu foto" : "manda una foto";
+    const photoAnnouncement = imageCount === 1 ? "una foto" : `${imageCount} foto`;
+    textToSpeak = textToSpeak
+      ? `${textToSpeak}, piu ${photoAnnouncement}`
+      : `manda ${photoAnnouncement}`;
   }
 
   if (!shouldSpeak || (!textToSpeak && imageCount === 0)) {
@@ -548,6 +552,32 @@ export async function handleVoiceStateUpdate(oldState: VoiceState, newState: Voi
       stopTTS(guildId);
     }
     return;
+  }
+
+  const joinedChannelId = newState.channelId;
+  const hasJoinedChannel = joinedChannelId && oldState.channelId !== joinedChannelId;
+  if (hasJoinedChannel && !newState.member?.user.bot) {
+    const ttsConfig = getTTSConfig(guildId);
+    const configuredChannelId = ttsConfig.ttsVoiceChannelId;
+    const activeChannelId = activeVoiceChannels.get(guildId);
+    const shouldAutoJoin =
+      ttsConfig.ttsEnabled &&
+      ttsConfig.ttsAutoJoinEnabled !== false &&
+      (!configuredChannelId || configuredChannelId === joinedChannelId) &&
+      !activeChannelId &&
+      !autoJoinInProgress.has(guildId);
+
+    if (shouldAutoJoin) {
+      autoJoinInProgress.add(guildId);
+      try {
+        await joinVoiceChannelManual(guildId, joinedChannelId, newState.client);
+        logger.info({ guildId, channelId: joinedChannelId }, "TTS: ingresso automatico nel canale vocale");
+      } catch (err) {
+        logger.error({ guildId, channelId: joinedChannelId, err }, "TTS: ingresso automatico fallito");
+      } finally {
+        autoJoinInProgress.delete(guildId);
+      }
+    }
   }
 
   // Un utente (non il bot) ha lasciato o cambiato canale vocale: se il bot era

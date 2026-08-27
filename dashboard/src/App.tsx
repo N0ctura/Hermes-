@@ -1920,7 +1920,15 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
     const [userSearch, setUserSearch] = useState("");
     const [hiddenUsers, setHiddenUsers] = useState<Set<string>>(new Set());
     const allDays = activity?.days ?? [];
-    const days = allDays.slice(-range);
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const daysByDate = new Map(allDays.map((day) => [day.date, day]));
+    const days = Array.from({ length: range }, (_, index) => {
+        const date = new Date(today);
+        date.setUTCDate(today.getUTCDate() - (range - 1 - index));
+        const dateKey = date.toISOString().slice(0, 10);
+        return daysByDate.get(dateKey) ?? { date: dateKey, messages: {}, voiceSeconds: {} };
+    });
     const memberNames = new Map(members.map((member) => [member.id, member.displayName || member.username]));
     const users = [...(activity?.users ?? [])].map((user) => ({
         ...user,
