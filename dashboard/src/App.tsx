@@ -1738,7 +1738,7 @@ export default function App() {
                     <span className="hidden sm:inline-flex items-center gap-2 text-xs text-[#A8967A]"><span className="w-2 h-2 rounded-full bg-emerald-400" /> {status?.online ? "Online" : "Offline"}</span>
                 </header>
                 <div className="max-w-[1200px] mx-auto px-6 py-6">
-                    {tab === "home" && <TabHome status={status} activity={activity} />}
+                    {tab === "home" && <TabHome status={status} activity={activity} members={guildMembers} />}
                     {tab === "welcome" && wlConf && (
                         <TabWelcomeLeave
                             kind="welcome"
@@ -1773,7 +1773,7 @@ export default function App() {
                     {tab === "logs" && logsConf && (
                         <TabLogs conf={logsConf} channels={textChannels} onChange={saveLogs} entries={dmLogs} onRefresh={loadGuildData} />
                     )}
-                    {tab === "activity" && <ActivityChart activity={activity} fullPage />}
+                    {tab === "activity" && <ActivityChart activity={activity} members={guildMembers} fullPage />}
                     {tab === "clan" && (
                         <TabClan data={clanOverview} error={clanError} loading={clanLoading} onRefresh={loadClanOverview} />
                     )}
@@ -1826,7 +1826,7 @@ export default function App() {
  * TAB COMPONENTS
  * ========================== */
 
-const TabHome: React.FC<{ status: BotStatusDto | null; activity: GuildActivityDto | null }> = ({ status, activity }) => {
+const TabHome: React.FC<{ status: BotStatusDto | null; activity: GuildActivityDto | null; members: DiscordMember[] }> = ({ status, activity, members }) => {
     if (!status) return <EmptyState icon={Activity} title="Stato non disponibile" text="Ricarica tra pochi secondi..." />;
     const items: { label: string; value: string; icon: any; color: string }[] = [
         { label: "Uptime", value: formatUptime(status.uptimeSeconds), icon: Clock, color: "indigo" },
@@ -1883,38 +1883,73 @@ const TabHome: React.FC<{ status: BotStatusDto | null; activity: GuildActivityDt
                 <InfoCard title="Piattaforma" icon={Server} value={status.platform} desc={`Avviato il ${new Date(status.startedAt).toLocaleString("it-IT")}`} />
             </div>
 
-            <ActivityChart activity={activity} />
+            <ActivityChart activity={activity} members={members} />
         </div>
     );
 };
 
-const ActivityChart: React.FC<{ activity: GuildActivityDto | null; fullPage?: boolean }> = ({ activity, fullPage = false }) => {
-    const [range, setRange] = useState<30 | 90 | 360>(30);
-    const days = (activity?.days ?? []).slice(-range);
-    const users = [...(activity?.users ?? [])].sort((a, b) => (b.messages + b.voiceSeconds / 3600) - (a.messages + a.voiceSeconds / 3600));
-    const maxMessages = Math.max(1, ...days.map((day) => Object.values(day.messages).reduce((sum, value) => sum + value, 0)));
-    const maxVoiceHours = Math.max(1, ...days.map((day) => Object.values(day.voiceSeconds).reduce((sum, value) => sum + value, 0) / 3600));
-    const totalMessages = users.reduce((sum, user) => sum + user.messages, 0);
-    const totalVoiceHours = users.reduce((sum, user) => sum + user.voiceSeconds, 0) / 3600;
+const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: DiscordMember[]; fullPage?: boolean }> = ({ activity, members, fullPage = false }) => {
+    const [range, setRange] = useState<7 | 30 | 90 | 360>(30);
+    const allDays = activity?.days ?? [];
+    const days = allDays.slice(-range);
+    const memberNames = new Map(members.map((member) => [member.id, member.displayName || member.username]));
+    const users = [...(activity?.users ?? [])].map((user) => ({
+        ...user,
+        name: memberNames.get(user.userId) || `Utente ${user.userId.slice(-6)}`,
+    }));
+    const totals = new Map(users.map((user) => [user.userId, { messages: 0, voiceSeconds: 0 }]));
+    for (const day of days) {
+        for (const [userId, count] of Object.entries(day.messages)) {
+            const total = totals.get(userId) || { messages: 0, voiceSeconds: 0 };
+            total.messages += count;
+            totals.set(userId, total);
+        }
+        for (const [userId, seconds] of Object.entries(day.voiceSeconds)) {
+            const total = totals.get(userId) || { messages: 0, voiceSeconds: 0 };
+            total.voiceSeconds += seconds;
+            totals.set(userId, total);
+        }
+    }
+    const periodUsers = users.map((user) => ({ ...user, ...(totals.get(user.userId) || { messages: 0, voiceSeconds: 0 }) }))
+        .filter((user) => user.messages > 0 || user.voiceSeconds > 0)
+        .sort((a, b) => (b.messages + b.voiceSeconds / 3600) - (a.messages + a.voiceSeconds / 3600));
+    const totalMessages = periodUsers.reduce((sum, user) => sum + user.messages, 0);
+    const totalVoiceHours = periodUsers.reduce((sum, user) => sum + user.voiceSeconds, 0) / 3600;
+    const chartUsers = periodUsers.slice(0, fullPage ? 8 : 6);
+    const width = 900;
+    const height = fullPage ? 360 : 300;
+    const pad = { left: 42, right: 18, top: 24, bottom: 42 };
+    const innerWidth = width - pad.left - pad.right;
+    const innerHeight = height - pad.top - pad.bottom;
+    const maxMessages = Math.max(1, ...days.flatMap((day) => chartUsers.map((user) => day.messages[user.userId] ?? 0)));
+    const maxVoiceHours = Math.max(1, ...days.flatMap((day) => chartUsers.map((user) => (day.voiceSeconds[user.userId] ?? 0) / 3600)));
+    const colors = ["#E4C468", "#D98B4A", "#72B8A5", "#9B8FD4", "#7CA6D9", "#C75C6B", "#B7A15B", "#C7C9CE"];
+    const xFor = (index: number) => days.length <= 1 ? pad.left + innerWidth / 2 : pad.left + (index / (days.length - 1)) * innerWidth;
+    const pointsFor = (userId: string, metric: "messages" | "voice") => days.map((day, index) => {
+        const value = metric === "messages" ? day.messages[userId] ?? 0 : (day.voiceSeconds[userId] ?? 0) / 3600;
+        const max = metric === "messages" ? maxMessages : maxVoiceHours;
+        return `${xFor(index)},${pad.top + innerHeight - (value / max) * innerHeight}`;
+    }).join(" ");
 
     return (
-        <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-5">
+        <section className="hermes-activity-panel bg-neutral-900 border border-neutral-800 rounded-[14px] p-5 space-y-5">
             <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
-                    <h2 className="text-lg font-black tracking-tight flex items-center gap-2"><TrendingUp className="w-5 h-5 text-[#E4C468]" /> Attività server</h2>
-                    <p className="text-sm text-neutral-400 mt-1">Messaggi scritti e permanenza nei canali vocali di tutti gli utenti.</p>
+                    <div className="text-[10px] uppercase tracking-[0.2em] font-extrabold text-[#B8983F] mb-2">Analytics / Activity</div>
+                    <h2 className="text-xl md:text-2xl font-black tracking-tight flex items-center gap-2"><TrendingUp className="w-5 h-5 text-[#E4C468]" /> Attività utenti</h2>
+                    <p className="text-sm text-neutral-400 mt-1">Una linea per ogni utente: messaggi solidi, ore vocali tratteggiate.</p>
                 </div>
-                <div className="flex items-center gap-1 p-1 bg-neutral-950 border border-neutral-800 rounded-lg">
-                    {[30, 90, 360].map((value) => (
-                        <button key={value} onClick={() => setRange(value as 30 | 90 | 360)} className={classNames("px-3 py-1.5 rounded-md text-xs font-bold transition-colors", range === value ? "bg-[#C9A227] text-[#1a1410]" : "text-neutral-400 hover:text-neutral-100")}>
-                            {value} giorni
+                <div className="flex items-center gap-1 p-1 bg-neutral-950 border border-neutral-800 rounded-xl">
+                    {[7, 30, 90, 360].map((value) => (
+                        <button key={value} onClick={() => setRange(value as 7 | 30 | 90 | 360)} className={classNames("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", range === value ? "bg-[#C9A227] text-[#1a1410]" : "text-neutral-400 hover:text-neutral-100")}>
+                            {value}g
                         </button>
                     ))}
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 md:max-w-md">
-                <Stat label="Messaggi nel periodo" value={totalMessages.toLocaleString("it-IT")} color="indigo" />
+            <div className="grid grid-cols-2 gap-3 md:max-w-lg">
+                <Stat label="Messaggi nel periodo" value={totalMessages.toLocaleString("it-IT")} color="amber" />
                 <Stat label="Ore in vocale" value={totalVoiceHours.toLocaleString("it-IT", { maximumFractionDigits: 1 })} color="amber" />
             </div>
 
@@ -1922,39 +1957,44 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; fullPage?: bo
                 <EmptyState compact icon={Activity} title="Ancora nessuna attività" text="I dati verranno raccolti da ora in poi mentre gli utenti scrivono o entrano nei canali vocali." />
             ) : (
                 <>
-                    <div className="overflow-x-auto pb-2">
-                        <div className="min-w-[620px] h-64 flex items-end gap-1.5 border-b border-neutral-800 px-2 pt-6">
-                            {days.map((day) => {
-                                const messages = Object.values(day.messages).reduce((sum, value) => sum + value, 0);
-                                const voiceHours = Object.values(day.voiceSeconds).reduce((sum, value) => sum + value, 0) / 3600;
-                                return (
-                                    <div key={day.date} className="h-full flex-1 min-w-2 flex items-end justify-center gap-0.5 group relative">
-                                        <div title={`${messages} messaggi`} className="w-1/2 max-w-3 rounded-t-sm bg-[#C9A227] transition-all group-hover:bg-[#F0D477]" style={{ height: `${Math.max(messages ? 3 : 0, (messages / maxMessages) * 100)}%` }} />
-                                        <div title={`${voiceHours.toLocaleString("it-IT", { maximumFractionDigits: 1 })} ore vocali`} className="w-1/2 max-w-3 rounded-t-sm bg-[#5DADE2] transition-all group-hover:bg-[#8BC8EA]" style={{ height: `${Math.max(voiceHours ? 3 : 0, (voiceHours / maxVoiceHours) * 100)}%` }} />
-                                        <span className="absolute top-full mt-2 text-[9px] text-neutral-600 whitespace-nowrap">{new Date(`${day.date}T12:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}</span>
-                                    </div>
-                                );
-                            })}
+                    <div className="hermes-chart-frame overflow-hidden rounded-xl border border-white/[0.06] bg-[#080A0C]/75">
+                        <div className="flex items-center justify-between px-4 pt-4">
+                            <div><div className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">Andamento giornaliero</div><div className="text-[11px] text-neutral-600 mt-1">Top {chartUsers.length} utenti del periodo selezionato</div></div>
+                            <div className="hidden sm:flex flex-wrap justify-end gap-3 text-[10px] text-neutral-500 max-w-[60%]">
+                                {chartUsers.map((user, index) => <span key={user.userId} className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-full" style={{ background: colors[index % colors.length] }} />{user.name}</span>)}
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[300px]" style={{ minWidth: Math.max(680, days.length * 28) }} role="img" aria-label="Grafico attività utenti">
+                                {[0, .25, .5, .75, 1].map((tick) => <line key={tick} x1={pad.left} x2={width - pad.right} y1={pad.top + innerHeight - tick * innerHeight} y2={pad.top + innerHeight - tick * innerHeight} stroke="rgba(255,255,255,.055)" />)}
+                                {chartUsers.map((user, index) => <g key={user.userId}>
+                                    <polyline points={pointsFor(user.userId, "messages")} fill="none" stroke={colors[index % colors.length]} strokeOpacity=".16" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+                                    <polyline points={pointsFor(user.userId, "messages")} fill="none" stroke={colors[index % colors.length]} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <polyline points={pointsFor(user.userId, "voice")} fill="none" stroke={colors[index % colors.length]} strokeOpacity=".72" strokeWidth="1.5" strokeDasharray="5 5" strokeLinecap="round" strokeLinejoin="round" />
+                                    {days.map((day, dayIndex) => (day.messages[user.userId] || day.voiceSeconds[user.userId]) ? <circle key={`${user.userId}-${day.date}`} cx={xFor(dayIndex)} cy={pad.top + innerHeight - ((day.messages[user.userId] ?? 0) / maxMessages) * innerHeight} r="2.2" fill="#080A0C" stroke={colors[index % colors.length]} strokeWidth="1.2"><title>{`${user.name}: ${day.messages[user.userId] ?? 0} messaggi, ${((day.voiceSeconds[user.userId] ?? 0) / 3600).toLocaleString("it-IT", { maximumFractionDigits: 1 })} ore`}</title></circle> : null)}
+                                </g>)}
+                                {days.map((day, index) => index % Math.max(1, Math.floor(days.length / 6)) === 0 ? <text key={day.date} x={xFor(index)} y={height - 10} textAnchor="middle" fill="#626970" fontSize="9">{new Date(`${day.date}T12:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}</text> : null)}
+                            </svg>
                         </div>
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-neutral-400">
-                        <span className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-sm bg-[#C9A227]" /> Messaggi</span>
-                        <span className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-sm bg-[#5DADE2]" /> Ore vocali</span>
+                    <div className="flex items-center gap-4 text-xs text-neutral-500">
+                        <span className="inline-flex items-center gap-1.5"><i className="w-5 border-t-2 border-[#E4C468]" /> Messaggi</span>
+                        <span className="inline-flex items-center gap-1.5"><i className="w-5 border-t border-dashed border-[#9AA1A8]" /> Ore vocali</span>
                     </div>
                     <div className="border-t border-neutral-800 pt-4">
-                        <h3 className="text-sm font-bold text-neutral-200 mb-3">Attività per utente</h3>
-                        {users.length === 0 ? <p className="text-xs text-neutral-500">Nessun utente registrato nel periodo.</p> : (
+                        <div className="flex items-center justify-between gap-3 mb-3"><div><h3 className="text-sm font-bold text-neutral-200">Dettaglio attività</h3><p className="text-[11px] text-neutral-600 mt-1">Distribuzione per utente nel periodo selezionato.</p></div><span className="text-[10px] uppercase tracking-[0.15em] text-neutral-600">{periodUsers.length} utenti</span></div>
+                        {periodUsers.length === 0 ? <p className="text-xs text-neutral-500">Nessun utente registrato nel periodo.</p> : (
                             <div className="space-y-2.5">
-                                {users.map((user) => {
-                                    const name = user.displayName || user.username || user.userId;
+                                {periodUsers.map((user, index) => {
+                                    const name = user.name;
                                     const messageWidth = totalMessages ? (user.messages / totalMessages) * 100 : 0;
                                     const voiceWidth = totalVoiceHours ? (user.voiceSeconds / 3600 / totalVoiceHours) * 100 : 0;
                                     return (
-                                        <div key={user.userId} className="grid grid-cols-[minmax(110px,1fr)_minmax(180px,2fr)_auto] items-center gap-3 text-xs">
-                                            <span className="truncate font-semibold text-neutral-200" title={name}>{name}</span>
+                                        <div key={user.userId} className="hermes-user-row grid grid-cols-[minmax(110px,1fr)_minmax(180px,2fr)_auto] items-center gap-3 text-xs rounded-xl px-3 py-2">
+                                            <span className="truncate font-semibold text-neutral-200 flex items-center gap-2" title={name}><i className="w-2 h-2 rounded-full" style={{ background: colors[index % colors.length] }} />{name}</span>
                                             <div className="space-y-1">
-                                                <div className="h-1.5 bg-neutral-950 rounded-full overflow-hidden"><div className="h-full bg-[#C9A227] rounded-full" style={{ width: `${messageWidth}%` }} /></div>
-                                                <div className="h-1.5 bg-neutral-950 rounded-full overflow-hidden"><div className="h-full bg-[#5DADE2] rounded-full" style={{ width: `${voiceWidth}%` }} /></div>
+                                                <div className="h-1.5 bg-neutral-950 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${messageWidth}%`, background: colors[index % colors.length] }} /></div>
+                                                <div className="h-1.5 bg-neutral-950 rounded-full overflow-hidden"><div className="h-full bg-[#7D858C] rounded-full" style={{ width: `${voiceWidth}%` }} /></div>
                                             </div>
                                             <span className="text-right text-neutral-400 whitespace-nowrap">{user.messages.toLocaleString("it-IT")} · {(user.voiceSeconds / 3600).toLocaleString("it-IT", { maximumFractionDigits: 1 })}h</span>
                                         </div>
