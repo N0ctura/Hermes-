@@ -170,6 +170,7 @@ export interface ScheduledMessageConfig {
   message: string;
   isRecurring: boolean;
   recurrenceInterval?: 'daily' | 'weekly' | 'monthly';
+  daysOfWeek?: number[];
   scheduledTime: string;
   lastSent?: string;
   enabled: boolean;

@@ -243,7 +243,11 @@ export async function startBot() {
                 if (msg.isRecurring) {
                     const lastSent = msg.lastSent ? new Date(msg.lastSent) : null;
                     let shouldSend = false;
-                    if (!lastSent) {
+                    if (Array.isArray(msg.daysOfWeek) && msg.daysOfWeek.length > 0) {
+                        const alreadySentToday = lastSent && new Date(lastSent).toDateString() === now.toDateString();
+                        shouldSend = now >= scheduledDate && msg.daysOfWeek.includes(now.getDay()) && !alreadySentToday;
+                    }
+                    else if (!lastSent) {
                         shouldSend = now >= scheduledDate;
                     }
                     else {

@@ -17,6 +17,7 @@ import {
   type GuildBirthdayConfig,
   type BirthdayEntry,
   type BotConfig,
+  type AutoResponseConfig,
 } from "./utils/storage.js";
 import { logger } from "./utils/logger.js";
 import { refreshBirthdayListMessage } from "./utils/birthday-list.js";
@@ -504,6 +505,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
         message: incoming.message ?? "",
         isRecurring: incoming.isRecurring ?? false,
         recurrenceInterval: incoming.recurrenceInterval as any,
+        daysOfWeek: Array.isArray(incoming.daysOfWeek) ? incoming.daysOfWeek : undefined,
         scheduledTime: incoming.scheduledTime ?? new Date().toISOString(),
         lastSent: incoming.lastSent,
         enabled: incoming.enabled ?? true,
@@ -521,6 +523,44 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     patchConfig((c) => {
       c.scheduledMessages = (c.scheduledMessages || []).filter(
         (m) => !(m.guildId === req.params.guildId && m.id === req.params.id)
+      );
+    });
+    res.status(204).end();
+  });
+
+  /* ===== Auto responses ===== */
+  app.get("/api/auto-responses/:guildId", (req, res) => {
+    const cfg = loadConfig();
+    res.json((cfg.autoResponses || []).filter((response) => response.guildId === req.params.guildId));
+  });
+
+  app.put("/api/auto-responses/:guildId", (req, res) => {
+    const guildId = req.params.guildId;
+    const incoming = (req.body || {}) as Partial<AutoResponseConfig>;
+    if (!incoming.id || !incoming.trigger?.trim()) return res.status(400).json({ error: "id e trigger required" });
+    const updated = patchConfig((c) => {
+      const arr = Array.isArray(c.autoResponses) ? [...c.autoResponses] : [];
+      const idx = arr.findIndex((response) => response.id === incoming.id && response.guildId === guildId);
+      const base: AutoResponseConfig = {
+        id: incoming.id,
+        guildId,
+        trigger: incoming.trigger!.trim(),
+        response: incoming.response ?? "",
+        isRegex: incoming.isRegex ?? false,
+        enabled: incoming.enabled ?? true,
+        createdAt: incoming.createdAt ?? new Date().toISOString(),
+      };
+      if (idx >= 0) arr[idx] = { ...arr[idx], ...base };
+      else arr.push(base);
+      c.autoResponses = arr;
+    });
+    res.json(updated.autoResponses?.find((response) => response.id === incoming.id && response.guildId === guildId));
+  });
+
+  app.delete("/api/auto-responses/:guildId/:id", (req, res) => {
+    patchConfig((c) => {
+      c.autoResponses = (c.autoResponses || []).filter(
+        (response) => !(response.guildId === req.params.guildId && response.id === req.params.id)
       );
     });
     res.status(204).end();

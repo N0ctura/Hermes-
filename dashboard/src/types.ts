@@ -118,8 +118,19 @@ export interface ScheduledMessage {
   message: string;
   isRecurring: boolean;
   recurrenceInterval?: string;
+  daysOfWeek?: number[];
   scheduledTime: string;
   lastSent?: string;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface AutoResponse {
+  id: string;
+  guildId: string;
+  trigger: string;
+  response: string;
+  isRegex: boolean;
   enabled: boolean;
   createdAt: string;
 }

@@ -61,6 +61,7 @@ import type {
     BirthdayEntry,
     DiscordMember,
     ScheduledMessage,
+    AutoResponse,
     ClanOverviewDto,
     GuildActivityDto,
 } from "./types.js";
@@ -1208,7 +1209,7 @@ const FieldColor: React.FC<{ label: string; value: string; onChange: (c: string)
  * APP MAIN
  * =========================== */
 
-type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "tts" | "logs" | "activity" | "clan" | "joinRequests" | "profileCard" | "birthday";
+type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "autoResponses" | "tts" | "logs" | "activity" | "clan" | "joinRequests" | "profileCard" | "birthday";
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
     { key: "home", label: "Home", icon: LayoutDashboard },
@@ -1216,6 +1217,7 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
     { key: "leave", label: "Leave", icon: UserMinus },
     { key: "autorole", label: "Auto Role", icon: Shield },
     { key: "messages", label: "Messaggi", icon: ListTodo },
+    { key: "autoResponses", label: "Autorisposte", icon: MessageSquare },
     { key: "tts", label: "TTS", icon: Volume2 },
     { key: "logs", label: "Logs", icon: Activity },
     { key: "activity", label: "Attività server", icon: TrendingUp },
@@ -1239,6 +1241,7 @@ export default function App() {
     const [ttsConf, setTtsConf] = useState<GuildTTS | null>(null);
     const [logsConf, setLogsConf] = useState<GuildLogs | null>(null);
     const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
+    const [autoResponses, setAutoResponses] = useState<AutoResponse[]>([]);
     const [dmLogs, setDmLogs] = useState<DeletedModifiedLogEntry[]>([]);
     const [clanOverview, setClanOverview] = useState<ClanOverviewDto | null>(null);
     const [clanError, setClanError] = useState<string | null>(null);
@@ -1348,6 +1351,7 @@ export default function App() {
                 apiCall<GuildTTS>(`/api/module/tts/${selectedGuildId}`),
                 apiCall<GuildLogs>(`/api/module/logs/${selectedGuildId}`),
                 apiCall<ScheduledMessage[]>(`/api/scheduled-messages/${selectedGuildId}`),
+                apiCall<AutoResponse[]>(`/api/auto-responses/${selectedGuildId}`),
                 apiCall<DeletedModifiedLogEntry[]>(`/api/logs/deleted-modified/${selectedGuildId}`),
                 apiCall<GuildJoinRequests>(`/api/module/join-requests/${selectedGuildId}`),
                 apiCall<GuildProfileCardConfig>(`/api/module/profile-card/${selectedGuildId}`),
@@ -1355,13 +1359,14 @@ export default function App() {
                 apiCall<DiscordMember[]>(`/api/guilds/${selectedGuildId}/members`),
                 apiCall<GuildActivityDto>(`/api/guilds/${selectedGuildId}/activity`),
             ]);
-            const [chs, rls, wl, tts, lg, sch, dml, jr, pc, bd, mbrs, act] = results;
+            const [chs, rls, wl, tts, lg, sch, ars, dml, jr, pc, bd, mbrs, act] = results;
             if (chs.status === "fulfilled") setChannels(chs.value);
             if (rls.status === "fulfilled") setRoles(rls.value);
             if (wl.status === "fulfilled") setWlConf(wl.value);
             if (tts.status === "fulfilled") setTtsConf(tts.value);
             if (lg.status === "fulfilled") setLogsConf(lg.value);
             if (sch.status === "fulfilled") setScheduled(sch.value);
+            if (ars.status === "fulfilled") setAutoResponses(ars.value);
             if (dml.status === "fulfilled") setDmLogs(dml.value);
             if (jr.status === "fulfilled") setJoinReqConf(jr.value);
             if (pc.status === "fulfilled") setProfileCardConf(pc.value);
@@ -1598,6 +1603,26 @@ export default function App() {
         }
     };
 
+    const saveAutoResponse = async (response: AutoResponse) => {
+        setSaving(true);
+        try {
+            const saved = await apiCall<AutoResponse>(`/api/auto-responses/${selectedGuildId}`, { method: "PUT", body: JSON.stringify(response) });
+            setAutoResponses((arr) => arr.some((item) => item.id === saved.id) ? arr.map((item) => item.id === saved.id ? saved : item) : [...arr, saved]);
+            showToast("ok", "Autorisposta salvata");
+        } catch (e: any) { showToast("err", e?.message || "Salvataggio fallito"); }
+        finally { setSaving(false); }
+    };
+
+    const deleteAutoResponse = async (id: string) => {
+        setSaving(true);
+        try {
+            await apiCall(`/api/auto-responses/${selectedGuildId}/${id}`, { method: "DELETE" });
+            setAutoResponses((arr) => arr.filter((item) => item.id !== id));
+            showToast("ok", "Autorisposta eliminata");
+        } catch (e: any) { showToast("err", e?.message || "Eliminazione fallita"); }
+        finally { setSaving(false); }
+    };
+
     const textChannels = useMemo(() => channels.filter((c) => c.type === 0), [channels]);
     const voiceChannels = useMemo(() => channels.filter((c) => c.type === 2), [channels]);
 
@@ -1767,6 +1792,7 @@ export default function App() {
                             onDelete={deleteScheduled}
                         />
                     )}
+                    {tab === "autoResponses" && <TabAutoResponses list={autoResponses} onSave={saveAutoResponse} onDelete={deleteAutoResponse} />}
                     {tab === "tts" && ttsConf && (
                         <TabTTS conf={ttsConf} textChannels={textChannels} voiceChannels={voiceChannels} onChange={saveTts} />
                     )}
@@ -2108,6 +2134,44 @@ const TabWelcomeLeave: React.FC<{
             <CanvasEditor card={activeCard} onChange={updateCard} type={kind} />
         </div>
     );
+
+    const TabAutoResponses: React.FC<{
+        list: AutoResponse[];
+        onSave: (response: AutoResponse) => void;
+        onDelete: (id: string) => void;
+    }> = ({ list, onSave, onDelete }) => {
+        const blank = (): AutoResponse => ({ id: uid(), guildId: "", trigger: "", response: "", isRegex: false, enabled: true, createdAt: new Date().toISOString() });
+        const [draft, setDraft] = useState<AutoResponse | null>(null);
+
+        return (
+            <div className="space-y-5 animate-fade-in">
+                <div className="flex items-center justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-black tracking-tight">Autorisposte</h1>
+                        <p className="text-sm text-neutral-400 mt-1">Risposte automatiche quando un messaggio contiene una parola o corrisponde a una regex.</p>
+                    </div>
+                    <button onClick={() => setDraft(blank())} className="px-4 py-2 bg-[#C9A227] hover:bg-[#8A6B1D] text-[#1a1410] font-semibold rounded-xl text-sm inline-flex items-center gap-2"><Plus className="w-4 h-4" /> Nuova regola</button>
+                </div>
+                {list.length === 0 ? <EmptyState icon={MessageSquare} title="Nessuna autorisposta" text="Crea una regola per rispondere automaticamente ai messaggi del server." /> : (
+                    <div className="space-y-2.5">
+                        {list.map((item) => <div key={item.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex items-center gap-3">
+                            <Toggle value={item.enabled} onChange={(enabled) => onSave({ ...item, enabled })} />
+                            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><code className="text-sm text-emerald-300 truncate">{item.trigger}</code>{item.isRegex && <span className="text-[10px] uppercase text-[#E4C468]">Regex</span>}</div><div className="text-sm text-neutral-300 truncate mt-1">{item.response || "(risposta vuota)"}</div></div>
+                            <button onClick={() => setDraft(item)} className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-200 border border-neutral-700">Modifica</button>
+                            <button onClick={() => onDelete(item.id)} className="p-2 rounded-lg text-rose-400 hover:bg-rose-500/10" title="Elimina"><Trash2 className="w-4 h-4" /></button>
+                        </div>)}
+                    </div>
+                )}
+                {draft && <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"><div className="w-full max-w-xl bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-2xl">
+                    <h3 className="text-lg font-black mb-4">{list.some((item) => item.id === draft.id) ? "Modifica autorisposta" : "Nuova autorisposta"}</h3>
+                    <Field label="Trigger"><input value={draft.trigger} onChange={(e) => setDraft({ ...draft, trigger: e.target.value })} placeholder="es. buongiorno" className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm" /></Field>
+                    <Field label="Risposta"><textarea rows={4} value={draft.response} onChange={(e) => setDraft({ ...draft, response: e.target.value })} placeholder="Scrivi la risposta..." className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm resize-none" /></Field>
+                    <div className="flex items-center justify-between gap-3 mt-3"><label className="inline-flex items-center gap-2 text-sm"><Toggle value={draft.isRegex} onChange={(isRegex) => setDraft({ ...draft, isRegex })} /> Usa espressione regolare</label><label className="inline-flex items-center gap-2 text-sm"><Toggle value={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} /> Attiva</label></div>
+                    <div className="mt-6 flex justify-end gap-2"><button onClick={() => setDraft(null)} className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-sm">Annulla</button><button disabled={!draft.trigger.trim() || !draft.response.trim()} onClick={() => { onSave(draft); setDraft(null); }} className="px-4 py-2 rounded-xl bg-[#C9A227] text-[#1a1410] text-sm font-semibold disabled:opacity-40">Salva</button></div>
+                </div></div>}
+            </div>
+        );
+    };
 };
 
 const Toggle: React.FC<{ value: boolean; onChange: (v: boolean) => void }> = ({ value, onChange }) => (
@@ -2206,6 +2270,7 @@ const TabScheduled: React.FC<{
         message: "",
         isRecurring: true,
         recurrenceInterval: "daily",
+        daysOfWeek: [],
         scheduledTime: new Date(Date.now() + 60_000).toISOString(),
         enabled: true,
         createdAt: new Date().toISOString(),
@@ -2354,6 +2419,16 @@ const ScheduledModal: React.FC<{
                                 <option value="weekly">Settimanale</option>
                                 <option value="monthly">Mensile</option>
                             </select>
+                        </Field>
+                    )}
+                    {m.isRecurring && (
+                        <Field label="Giorni della settimana (opzionale)">
+                            <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+                                {["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"].map((day, index) => {
+                                    const selected = (m.daysOfWeek ?? []).includes(index);
+                                    return <button key={day} type="button" onClick={() => setM({ ...m, daysOfWeek: selected ? (m.daysOfWeek ?? []).filter((value) => value !== index) : [...(m.daysOfWeek ?? []), index].sort() })} className={classNames("px-2 py-2 rounded-lg border text-xs font-semibold", selected ? "bg-[#C9A227] text-[#1a1410] border-[#C9A227]" : "bg-neutral-950 border-neutral-800 text-neutral-400 hover:bg-neutral-800")}>{day}</button>;
+                                })}
+                            </div>
                         </Field>
                     )}
                     <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
