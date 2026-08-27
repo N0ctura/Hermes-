@@ -1917,6 +1917,8 @@ const TabHome: React.FC<{ status: BotStatusDto | null; activity: GuildActivityDt
 
 const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: DiscordMember[]; fullPage?: boolean }> = ({ activity, members, fullPage = false }) => {
     const [range, setRange] = useState<7 | 30 | 90 | 360>(30);
+    const [userSearch, setUserSearch] = useState("");
+    const [hiddenUsers, setHiddenUsers] = useState<Set<string>>(new Set());
     const allDays = activity?.days ?? [];
     const days = allDays.slice(-range);
     const memberNames = new Map(members.map((member) => [member.id, member.displayName || member.username]));
@@ -1942,14 +1944,15 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
         .sort((a, b) => (b.messages + b.voiceSeconds / 3600) - (a.messages + a.voiceSeconds / 3600));
     const totalMessages = periodUsers.reduce((sum, user) => sum + user.messages, 0);
     const totalVoiceHours = periodUsers.reduce((sum, user) => sum + user.voiceSeconds, 0) / 3600;
-    const chartUsers = periodUsers.slice(0, fullPage ? 8 : 6);
+    const matchingUsers = periodUsers.filter((user) => user.name.toLowerCase().includes(userSearch.trim().toLowerCase()));
+    const chartUsers = matchingUsers.filter((user) => !hiddenUsers.has(user.userId));
     const width = 900;
     const height = fullPage ? 360 : 300;
     const pad = { left: 42, right: 18, top: 24, bottom: 42 };
     const innerWidth = width - pad.left - pad.right;
     const innerHeight = height - pad.top - pad.bottom;
-    const maxMessages = Math.max(1, ...days.flatMap((day) => chartUsers.map((user) => day.messages[user.userId] ?? 0)));
-    const maxVoiceHours = Math.max(1, ...days.flatMap((day) => chartUsers.map((user) => (day.voiceSeconds[user.userId] ?? 0) / 3600)));
+    const maxMessages = Math.max(1, ...days.flatMap((day) => periodUsers.map((user) => day.messages[user.userId] ?? 0)));
+    const maxVoiceHours = Math.max(1, ...days.flatMap((day) => periodUsers.map((user) => (day.voiceSeconds[user.userId] ?? 0) / 3600)));
     const colors = ["#E4C468", "#D98B4A", "#72B8A5", "#9B8FD4", "#7CA6D9", "#C75C6B", "#B7A15B", "#C7C9CE"];
     const xFor = (index: number) => days.length <= 1 ? pad.left + innerWidth / 2 : pad.left + (index / (days.length - 1)) * innerWidth;
     const pointsFor = (userId: string, metric: "messages" | "voice") => days.map((day, index) => {
@@ -1975,6 +1978,14 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
                 </div>
             </div>
 
+            <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex-1 relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Cerca una persona nel grafico..." className="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-9 pr-3 py-2.5 text-sm" />
+                </div>
+                <button onClick={() => setHiddenUsers(new Set())} className="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-300">Mostra tutti</button>
+            </div>
+
             <div className="grid grid-cols-2 gap-3 md:max-w-lg">
                 <Stat label="Messaggi nel periodo" value={totalMessages.toLocaleString("it-IT")} color="amber" />
                 <Stat label="Ore in vocale" value={totalVoiceHours.toLocaleString("it-IT", { maximumFractionDigits: 1 })} color="amber" />
@@ -1987,8 +1998,8 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
                     <div className="hermes-chart-frame overflow-hidden rounded-xl border border-white/[0.06] bg-[#080A0C]/75">
                         <div className="flex items-center justify-between px-4 pt-4">
                             <div><div className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">Andamento giornaliero</div><div className="text-[11px] text-neutral-600 mt-1">Top {chartUsers.length} utenti del periodo selezionato</div></div>
-                            <div className="hidden sm:flex flex-wrap justify-end gap-3 text-[10px] text-neutral-500 max-w-[60%]">
-                                {chartUsers.map((user, index) => <span key={user.userId} className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-full" style={{ background: colors[index % colors.length] }} />{user.name}</span>)}
+                            <div className="flex flex-wrap justify-end gap-2 max-w-[70%] max-h-20 overflow-auto">
+                                {matchingUsers.map((user, index) => <button key={user.userId} onClick={() => setHiddenUsers((current) => { const next = new Set(current); if (next.has(user.userId)) next.delete(user.userId); else next.add(user.userId); return next; })} className={classNames("inline-flex items-center gap-1.5 text-[10px] rounded-md px-1.5 py-1 transition-opacity", hiddenUsers.has(user.userId) ? "opacity-30 line-through" : "text-neutral-500 hover:text-neutral-200")}><i className="w-2 h-2 rounded-full" style={{ background: colors[index % colors.length] }} />{user.name}</button>)}
                             </div>
                         </div>
                         <div className="overflow-x-auto">
@@ -1998,7 +2009,16 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
                                     <polyline points={pointsFor(user.userId, "messages")} fill="none" stroke={colors[index % colors.length]} strokeOpacity=".16" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
                                     <polyline points={pointsFor(user.userId, "messages")} fill="none" stroke={colors[index % colors.length]} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                                     <polyline points={pointsFor(user.userId, "voice")} fill="none" stroke={colors[index % colors.length]} strokeOpacity=".72" strokeWidth="1.5" strokeDasharray="5 5" strokeLinecap="round" strokeLinejoin="round" />
-                                    {days.map((day, dayIndex) => (day.messages[user.userId] || day.voiceSeconds[user.userId]) ? <circle key={`${user.userId}-${day.date}`} cx={xFor(dayIndex)} cy={pad.top + innerHeight - ((day.messages[user.userId] ?? 0) / maxMessages) * innerHeight} r="2.2" fill="#080A0C" stroke={colors[index % colors.length]} strokeWidth="1.2"><title>{`${user.name}: ${day.messages[user.userId] ?? 0} messaggi, ${((day.voiceSeconds[user.userId] ?? 0) / 3600).toLocaleString("it-IT", { maximumFractionDigits: 1 })} ore`}</title></circle> : null)}
+                                    {days.map((day, dayIndex) => {
+                                        const messages = day.messages[user.userId] ?? 0;
+                                        const voiceHours = (day.voiceSeconds[user.userId] ?? 0) / 3600;
+                                        if (!messages && !voiceHours) return null;
+                                        const color = colors[index % colors.length];
+                                        return <g key={`${user.userId}-${day.date}`}>
+                                            {messages > 0 && <circle cx={xFor(dayIndex)} cy={pad.top + innerHeight - (messages / maxMessages) * innerHeight} r="2.5" fill="#080A0C" stroke={color} strokeWidth="1.3"><title>{`${user.name}: ${messages} messaggi`}</title></circle>}
+                                            {voiceHours > 0 && <circle cx={xFor(dayIndex)} cy={pad.top + innerHeight - (voiceHours / maxVoiceHours) * innerHeight} r="2.5" fill="#080A0C" stroke="#AEB5BB" strokeWidth="1.3"><title>{`${user.name}: ${voiceHours.toLocaleString("it-IT", { maximumFractionDigits: 1 })} ore vocali`}</title></circle>}
+                                        </g>;
+                                    })}
                                 </g>)}
                                 {days.map((day, index) => index % Math.max(1, Math.floor(days.length / 6)) === 0 ? <text key={day.date} x={xFor(index)} y={height - 10} textAnchor="middle" fill="#626970" fontSize="9">{new Date(`${day.date}T12:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}</text> : null)}
                             </svg>
@@ -2009,10 +2029,10 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
                         <span className="inline-flex items-center gap-1.5"><i className="w-5 border-t border-dashed border-[#9AA1A8]" /> Ore vocali</span>
                     </div>
                     <div className="border-t border-neutral-800 pt-4">
-                        <div className="flex items-center justify-between gap-3 mb-3"><div><h3 className="text-sm font-bold text-neutral-200">Dettaglio attività</h3><p className="text-[11px] text-neutral-600 mt-1">Distribuzione per utente nel periodo selezionato.</p></div><span className="text-[10px] uppercase tracking-[0.15em] text-neutral-600">{periodUsers.length} utenti</span></div>
-                        {periodUsers.length === 0 ? <p className="text-xs text-neutral-500">Nessun utente registrato nel periodo.</p> : (
+                        <div className="flex items-center justify-between gap-3 mb-3"><div><h3 className="text-sm font-bold text-neutral-200">Dettaglio attività</h3><p className="text-[11px] text-neutral-600 mt-1">Distribuzione per utente nel periodo selezionato.</p></div><span className="text-[10px] uppercase tracking-[0.15em] text-neutral-600">{chartUsers.length}/{periodUsers.length} visibili</span></div>
+                        {chartUsers.length === 0 ? <p className="text-xs text-neutral-500">Nessun utente corrisponde al filtro attuale.</p> : (
                             <div className="space-y-2.5">
-                                {periodUsers.map((user, index) => {
+                                {chartUsers.map((user, index) => {
                                     const name = user.name;
                                     const messageWidth = totalMessages ? (user.messages / totalMessages) * 100 : 0;
                                     const voiceWidth = totalVoiceHours ? (user.voiceSeconds / 3600 / totalVoiceHours) * 100 : 0;
