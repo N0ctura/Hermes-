@@ -2,6 +2,8 @@
 node_modules/
 .npm/
 .npmrc
+archive-*.zip
+*.save
 
 # Configurazioni private e credenziali (NON caricare mai su GitHub)
 .env
@@ -18,6 +20,7 @@ pm2-*.log
 .temp/
 .cache/
 coverage/
+proposta-grafica/
 
 # Rimosse dist/ e dashboard-dist/ per permettere a GitHub di salvarle
 # e non far crashare più il server di Sparked Host

@@ -223,3 +223,183 @@ h1, h2, h3,
 ::-webkit-scrollbar-thumb:hover {
   background: #6b532f;
 }
+
+/* Hermes visual system: presentation-only overrides for the existing JSX. */
+:root {
+  --hermes-bg: #080a0c;
+  --hermes-surface: rgba(17, 21, 25, 0.92);
+  --hermes-surface-2: rgba(13, 16, 19, 0.94);
+  --hermes-line: rgba(223, 189, 85, 0.16);
+  --hermes-gold: #dfbd55;
+  --hermes-gold-bright: #f4d77d;
+  --hermes-text: #f0f2f2;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  background:
+    radial-gradient(900px 500px at 8% -10%, rgba(223, 189, 85, 0.085), transparent 64%),
+    radial-gradient(850px 560px at 100% 5%, rgba(255, 255, 255, 0.035), transparent 60%),
+    var(--hermes-bg);
+  color: var(--hermes-text);
+  text-rendering: optimizeLegibility;
+}
+
+body { overflow: hidden; }
+
+button,
+input,
+select,
+textarea { font: inherit; }
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid rgba(244, 215, 125, 0.9);
+  outline-offset: 2px;
+}
+
+.hermes-app-shell {
+  background: #080a0c !important;
+  color: var(--hermes-text) !important;
+}
+
+.hermes-app-shell::before {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    radial-gradient(850px 520px at 22% 0%, rgba(223, 189, 85, 0.10), transparent 62%),
+    #080a0c;
+  background-size: 42px 42px, 42px 42px, auto, auto;
+}
+
+.hermes-server-rail,
+.hermes-nav-panel {
+  background: rgba(8, 10, 12, 0.92) !important;
+  border-color: rgba(255, 255, 255, 0.055) !important;
+  backdrop-filter: blur(18px);
+}
+
+.hermes-server-rail {
+  width: 72px !important;
+  padding-top: 14px !important;
+  box-shadow: 14px 0 40px rgba(0, 0, 0, 0.18);
+}
+
+.hermes-nav-panel {
+  width: 248px !important;
+  box-shadow: 12px 0 42px rgba(0, 0, 0, 0.18);
+}
+
+.hermes-nav-panel button,
+.hermes-server-rail button {
+  transition: transform 160ms ease, background-color 160ms ease, color 160ms ease, filter 160ms ease;
+}
+
+.hermes-nav-panel button:hover { transform: translateX(2px); }
+.hermes-server-rail button:hover { transform: translateY(-1px); filter: drop-shadow(0 0 12px rgba(223, 189, 85, 0.16)); }
+
+.hermes-main {
+  background: transparent !important;
+  scrollbar-width: thin;
+}
+
+.hermes-topbar {
+  height: 68px !important;
+  background: rgba(8, 10, 12, 0.78) !important;
+  border-color: rgba(255, 255, 255, 0.055) !important;
+  backdrop-filter: blur(22px) saturate(120%);
+}
+
+.hermes-main > div {
+  width: 100%;
+  max-width: 1440px !important;
+  padding: 30px 34px 46px !important;
+}
+
+.hermes-main .bg-neutral-900 {
+  background: linear-gradient(145deg, rgba(27, 31, 35, 0.92), rgba(12, 15, 18, 0.96)) !important;
+  border-color: rgba(223, 189, 85, 0.13) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.hermes-main .bg-neutral-950 {
+  background: rgba(6, 8, 10, 0.72) !important;
+  border-color: rgba(255, 255, 255, 0.055) !important;
+}
+
+.hermes-main input,
+.hermes-main textarea,
+.hermes-main select {
+  background: rgba(5, 7, 9, 0.76) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 9px !important;
+}
+
+.hermes-main input:focus,
+.hermes-main textarea:focus,
+.hermes-main select:focus {
+  border-color: rgba(223, 189, 85, 0.58) !important;
+  box-shadow: 0 0 0 3px rgba(223, 189, 85, 0.08);
+}
+
+@media (max-width: 820px) {
+  .hermes-nav-panel { width: 196px !important; }
+  .hermes-main > div { padding: 22px 18px 34px !important; }
+}
+
+@media (max-width: 640px) {
+  .hermes-server-rail { width: 52px !important; }
+  .hermes-nav-panel { width: 172px !important; }
+  .hermes-main > div { padding: 18px 12px 28px !important; }
+  .hermes-topbar { height: 58px !important; padding-left: 14px !important; padding-right: 14px !important; }
+}
+
+/* Login presentation layer. */
+.hermes-login {
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  color: #f0f2f2;
+  background: radial-gradient(700px 460px at 50% 45%, rgba(223, 189, 85, 0.10), transparent 68%), #07090b;
+}
+
+.hermes-login-grid,
+.hermes-login-noise,
+.hermes-login-orbit { position: absolute; pointer-events: none; }
+.hermes-login-grid { inset: 0; z-index: -2; opacity: .34; background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px); background-size: 44px 44px; mask-image: radial-gradient(circle at center, black, transparent 78%); }
+.hermes-login-orbit { z-index: -1; border: 1px solid rgba(223,189,85,.1); border-radius: 50%; box-shadow: 0 0 70px rgba(223,189,85,.035); }
+.hermes-login-orbit-a { width: 680px; height: 680px; transform: rotate(18deg); }
+.hermes-login-orbit-b { width: 430px; height: 430px; transform: rotate(-24deg); border-color: rgba(223,189,85,.07); }
+.hermes-login-card { position: relative; width: min(100%, 440px); padding: 34px; border: 1px solid rgba(223,189,85,.22); border-radius: 18px; background: linear-gradient(145deg, rgba(27,31,35,.96), rgba(10,13,16,.98)); box-shadow: 0 34px 100px rgba(0,0,0,.52), 0 0 70px rgba(223,189,85,.055); backdrop-filter: blur(22px); }
+.hermes-login-brand { display: flex; align-items: center; gap: 15px; }
+.hermes-login-logo-wrap { width: 66px; height: 66px; flex: 0 0 66px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(223,189,85,.26); border-radius: 16px; background: rgba(5,7,9,.72); box-shadow: 0 0 30px rgba(223,189,85,.06); }
+.hermes-login-logo { width: 54px; height: 54px; object-fit: contain; filter: drop-shadow(0 0 9px rgba(223,189,85,.22)); }
+.hermes-login-kicker, .hermes-login-section-label, .hermes-login-label { color: #b8983f; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.hermes-login-brand h1 { margin: 4px 0 2px; font-family: var(--font-display); font-size: 26px; color: #f5f4ee; }
+.hermes-login-brand p, .hermes-login-copy { color: #aab1b6; font-size: 13px; }
+.hermes-login-divider { height: 1px; margin: 28px 0 24px; background: linear-gradient(90deg, transparent, rgba(223,189,85,.25), transparent); }
+.hermes-login-welcome { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; }
+.hermes-login-welcome h2 { margin-top: 5px; font-size: 17px; color: #f0f2f2; }
+.hermes-login-welcome-icon { padding: 9px; border: 1px solid rgba(223,189,85,.2); border-radius: 9px; color: #dfbd55; background: rgba(223,189,85,.08); }
+.hermes-login-field { margin-top: 18px; }
+.hermes-login-input-wrap { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 0 13px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(5,7,9,.76); color: #7f898f; }
+.hermes-login-input-wrap:focus-within { border-color: rgba(223,189,85,.58); box-shadow: 0 0 0 3px rgba(223,189,85,.08); }
+.hermes-login-input-wrap input { width: 100%; min-width: 0; padding: 13px 0; border: 0; outline: 0; background: transparent; color: #f0f2f2; }
+.hermes-login-button { width: 100%; min-height: 46px; margin-top: 18px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid rgba(223,189,85,.28); border-radius: 10px; background: linear-gradient(135deg, #dfbd55, #a9831d); color: #10100c; font-weight: 800; cursor: pointer; }
+.hermes-login-button:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+.hermes-login-error { display: flex; gap: 9px; margin-top: 12px; padding: 11px 12px; border: 1px solid rgba(185,59,75,.32); border-radius: 9px; background: rgba(66,21,28,.45); color: #f0a6ad; font-size: 12px; }
+.hermes-login-spinner { width: 15px; height: 15px; border: 2px solid rgba(16,16,12,.28); border-top-color: #10100c; border-radius: 50%; animation: hermes-login-spin 700ms linear infinite; }
+.hermes-login-foot { display: flex; justify-content: center; gap: 7px; margin-top: 20px; color: #687279; font-size: 10px; }
+@keyframes hermes-login-spin { to { transform: rotate(360deg); } }
+@media (max-width: 520px) { .hermes-login { padding: 16px; } .hermes-login-card { padding: 26px 22px; } }
