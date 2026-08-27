@@ -108,10 +108,7 @@ body,
 }
 
 .hermes-home-banner {
-  background:
-  linear-gradient(105deg, rgba(12, 9, 6, 0.9), rgba(12, 9, 6, 0.62) 58%, rgba(12, 9, 6, 0.82)),
-  linear-gradient(180deg, rgba(18, 15, 11, 0.38), rgba(8, 8, 8, 0.8)),
-  url("/assets/dashboard-icons/banner-hermes-bot.png") center / cover no-repeat;
+  background: url("/assets/dashboard-icons/banner-hermes-bot.png") center / cover no-repeat;
   min-height: 190px;
 }
 

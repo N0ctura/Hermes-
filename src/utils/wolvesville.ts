@@ -11,7 +11,7 @@ function headers() {
 
 function personalHeaders() {
   return {
-    Authorization: `Bot ${process.env["WOLVESVILLE_PERSONAL_API_KEY"] ?? ""}`,
+    Authorization: `Bot ${process.env["WOLVESVILLE_PERSONAL_API_KEY"] ?? process.env["WOLVESVILLE_API_KEY"] ?? ""}`,
     "Content-Type": "application/json",
     Accept: "application/json",
   };

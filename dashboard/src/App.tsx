@@ -1709,7 +1709,7 @@ export default function App() {
                         <Sparkles className="w-4 h-4 text-[#E4C468]" />
                     </div>
                     <div className="min-w-0">
-                        <div className="font-display font-bold tracking-wide text-[#EDE3C8] leading-tight">Ade</div>
+                        <div className="font-display font-bold tracking-wide text-[#EDE3C8] leading-tight">Hermes</div>
                         <div className="text-[11px] text-[#7C6A4C] truncate">
                             {guilds.find((g) => g.id === selectedGuildId)?.name || "Nessun server"}
                         </div>
@@ -1868,13 +1868,7 @@ const TabHome: React.FC<{ status: BotStatusDto | null; activity: GuildActivityDt
     ];
     return (
         <div className="space-y-5 animate-fade-in">
-            <div className="hermes-home-banner relative overflow-hidden border border-[#C9A227]/30 rounded-[10px] p-7 md:p-9">
-                <div className="relative z-10 max-w-2xl">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[#C9A227] font-bold">Χαῖρε — Bentornato, araldo</div>
-                    <h1 className="font-display text-2xl md:text-4xl font-black mt-3 text-[#F4F4F0]">Il regno di <em className="text-[#E8C458] not-italic">{status.guildsCount ? "Hermes" : "Hermes"}</em> attende il tuo comando</h1>
-                    <p className="text-sm text-[#BDBDB8] mt-3 max-w-xl">Plasma messaggi, ruoli e cerimonie del server dal tuo trono d'Olimpo digitale.</p>
-                </div>
-            </div>
+            <div className="hermes-home-banner relative overflow-hidden border border-[#C9A227]/30 rounded-[10px]" aria-label="Hermes" />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {items.map((it) => {
                     const Icon = it.icon;
