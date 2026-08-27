@@ -442,7 +442,7 @@ interface CanvasEditorProps {
 }
 
 const PREVIEW_AVATAR =
-    "https://i.pravatar.cc/300?img=15";
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 300'%3E%3Crect width='300' height='300' fill='%23171b1f'/%3E%3Ccircle cx='150' cy='112' r='58' fill='%23dfbd55'/%3E%3Cpath d='M55 285c8-70 45-103 95-103s87 33 95 103' fill='%23dfbd55'/%3E%3C/svg%3E";
 
 const CANVAS_TYPE_LABELS: Record<CanvasEditorProps["type"], string> = {
     welcome: "Welcome",
@@ -2135,43 +2135,6 @@ const TabWelcomeLeave: React.FC<{
         </div>
     );
 
-    const TabAutoResponses: React.FC<{
-        list: AutoResponse[];
-        onSave: (response: AutoResponse) => void;
-        onDelete: (id: string) => void;
-    }> = ({ list, onSave, onDelete }) => {
-        const blank = (): AutoResponse => ({ id: uid(), guildId: "", trigger: "", response: "", isRegex: false, enabled: true, createdAt: new Date().toISOString() });
-        const [draft, setDraft] = useState<AutoResponse | null>(null);
-
-        return (
-            <div className="space-y-5 animate-fade-in">
-                <div className="flex items-center justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-black tracking-tight">Autorisposte</h1>
-                        <p className="text-sm text-neutral-400 mt-1">Risposte automatiche quando un messaggio contiene una parola o corrisponde a una regex.</p>
-                    </div>
-                    <button onClick={() => setDraft(blank())} className="px-4 py-2 bg-[#C9A227] hover:bg-[#8A6B1D] text-[#1a1410] font-semibold rounded-xl text-sm inline-flex items-center gap-2"><Plus className="w-4 h-4" /> Nuova regola</button>
-                </div>
-                {list.length === 0 ? <EmptyState icon={MessageSquare} title="Nessuna autorisposta" text="Crea una regola per rispondere automaticamente ai messaggi del server." /> : (
-                    <div className="space-y-2.5">
-                        {list.map((item) => <div key={item.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex items-center gap-3">
-                            <Toggle value={item.enabled} onChange={(enabled) => onSave({ ...item, enabled })} />
-                            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><code className="text-sm text-emerald-300 truncate">{item.trigger}</code>{item.isRegex && <span className="text-[10px] uppercase text-[#E4C468]">Regex</span>}</div><div className="text-sm text-neutral-300 truncate mt-1">{item.response || "(risposta vuota)"}</div></div>
-                            <button onClick={() => setDraft(item)} className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-200 border border-neutral-700">Modifica</button>
-                            <button onClick={() => onDelete(item.id)} className="p-2 rounded-lg text-rose-400 hover:bg-rose-500/10" title="Elimina"><Trash2 className="w-4 h-4" /></button>
-                        </div>)}
-                    </div>
-                )}
-                {draft && <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"><div className="w-full max-w-xl bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-2xl">
-                    <h3 className="text-lg font-black mb-4">{list.some((item) => item.id === draft.id) ? "Modifica autorisposta" : "Nuova autorisposta"}</h3>
-                    <Field label="Trigger"><input value={draft.trigger} onChange={(e) => setDraft({ ...draft, trigger: e.target.value })} placeholder="es. buongiorno" className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm" /></Field>
-                    <Field label="Risposta"><textarea rows={4} value={draft.response} onChange={(e) => setDraft({ ...draft, response: e.target.value })} placeholder="Scrivi la risposta..." className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm resize-none" /></Field>
-                    <div className="flex items-center justify-between gap-3 mt-3"><label className="inline-flex items-center gap-2 text-sm"><Toggle value={draft.isRegex} onChange={(isRegex) => setDraft({ ...draft, isRegex })} /> Usa espressione regolare</label><label className="inline-flex items-center gap-2 text-sm"><Toggle value={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} /> Attiva</label></div>
-                    <div className="mt-6 flex justify-end gap-2"><button onClick={() => setDraft(null)} className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-sm">Annulla</button><button disabled={!draft.trigger.trim() || !draft.response.trim()} onClick={() => { onSave(draft); setDraft(null); }} className="px-4 py-2 rounded-xl bg-[#C9A227] text-[#1a1410] text-sm font-semibold disabled:opacity-40">Salva</button></div>
-                </div></div>}
-            </div>
-        );
-    };
 };
 
 const Toggle: React.FC<{ value: boolean; onChange: (v: boolean) => void }> = ({ value, onChange }) => (
@@ -2191,6 +2154,22 @@ const Toggle: React.FC<{ value: boolean; onChange: (v: boolean) => void }> = ({ 
         />
     </button>
 );
+
+const TabAutoResponses: React.FC<{
+    list: AutoResponse[];
+    onSave: (response: AutoResponse) => void;
+    onDelete: (id: string) => void;
+}> = ({ list, onSave, onDelete }) => {
+    const blank = (): AutoResponse => ({ id: uid(), guildId: "", trigger: "", response: "", isRegex: false, enabled: true, createdAt: new Date().toISOString() });
+    const [draft, setDraft] = useState<AutoResponse | null>(null);
+    return (
+        <div className="space-y-5 animate-fade-in">
+            <div className="flex items-center justify-between gap-4"><div><h1 className="text-2xl font-black tracking-tight">Autorisposte</h1><p className="text-sm text-neutral-400 mt-1">Risposte automatiche per parole o espressioni regolari.</p></div><button onClick={() => setDraft(blank())} className="px-4 py-2 bg-[#C9A227] text-[#1a1410] font-semibold rounded-xl text-sm inline-flex items-center gap-2"><Plus className="w-4 h-4" /> Nuova regola</button></div>
+            {list.length === 0 ? <EmptyState icon={MessageSquare} title="Nessuna autorisposta" text="Crea una regola per rispondere automaticamente ai messaggi." /> : <div className="space-y-2.5">{list.map((item) => <div key={item.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex items-center gap-3"><Toggle value={item.enabled} onChange={(enabled) => onSave({ ...item, enabled })} /><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><code className="text-sm text-emerald-300 truncate">{item.trigger}</code>{item.isRegex && <span className="text-[10px] uppercase text-[#E4C468]">Regex</span>}</div><div className="text-sm text-neutral-300 truncate mt-1">{item.response || "(risposta vuota)"}</div></div><button onClick={() => setDraft(item)} className="px-3 py-1.5 rounded-lg bg-neutral-800 text-xs text-neutral-200">Modifica</button><button onClick={() => onDelete(item.id)} className="p-2 text-rose-400" title="Elimina"><Trash2 className="w-4 h-4" /></button></div>)}</div>}
+            {draft && <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"><div className="w-full max-w-xl bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-2xl"><h3 className="text-lg font-black mb-4">{list.some((item) => item.id === draft.id) ? "Modifica autorisposta" : "Nuova autorisposta"}</h3><Field label="Trigger"><input value={draft.trigger} onChange={(e) => setDraft({ ...draft, trigger: e.target.value })} placeholder="es. buongiorno" className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm" /></Field><Field label="Risposta"><textarea rows={4} value={draft.response} onChange={(e) => setDraft({ ...draft, response: e.target.value })} placeholder="Scrivi la risposta..." className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm resize-none" /></Field><div className="flex items-center justify-between gap-3 mt-3"><label className="inline-flex items-center gap-2 text-sm"><Toggle value={draft.isRegex} onChange={(isRegex) => setDraft({ ...draft, isRegex })} /> Regex</label><label className="inline-flex items-center gap-2 text-sm"><Toggle value={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} /> Attiva</label></div><div className="mt-6 flex justify-end gap-2"><button onClick={() => setDraft(null)} className="px-4 py-2 rounded-xl bg-neutral-800 text-sm">Annulla</button><button disabled={!draft.trigger.trim() || !draft.response.trim()} onClick={() => { onSave(draft); setDraft(null); }} className="px-4 py-2 rounded-xl bg-[#C9A227] text-[#1a1410] text-sm font-semibold disabled:opacity-40">Salva</button></div></div></div>}
+        </div>
+    );
+};
 
 const TabAutorole: React.FC<{
     conf: GuildWelcomeLeave;
