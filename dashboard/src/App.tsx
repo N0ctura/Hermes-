@@ -1749,7 +1749,7 @@ export default function App() {
                     <span className="text-xs text-[#7C6A4C]">Bot</span>
                     <span className="text-xs font-semibold text-[#EDE3C8]">{status?.online ? "Online" : "Offline"}</span>
                     <div className="flex-1" />
-                    {saving && <Save className="w-3.5 h-3.5 text-[#E4C468] animate-pulse" title="Salvando..." />}
+                    {saving && <span title="Salvando..."><Save className="w-3.5 h-3.5 text-[#E4C468] animate-pulse" /></span>}
                 </div>
             </aside>
 

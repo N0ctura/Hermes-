@@ -15,6 +15,7 @@ export interface CardLayer {
   borderRadius?: number;
   borderWidth?: number;
   borderColor?: string;
+  grayscale?: boolean;
 }
 
 export interface CardConfig {
@@ -161,6 +162,7 @@ export interface WvClanLogEntry {
 }
 
 export type ClanGoldTransactionType =
+  | "DONATE"
   | "GOLD_DONATION"
   | "GOLD_PURCHASED_QUEST_SLOT"
   | "GOLD_REFUNDED_QUEST_SLOT"
