@@ -1266,13 +1266,6 @@ export default function App() {
 
     /* ---------- Auth ---------- */
     useEffect(() => {
-        const isLocalPreview = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-        if (isLocalPreview) {
-            setNeedPwd(false);
-            setAuthed("yes");
-            return;
-        }
-
         (async () => {
             try {
                 const res = await fetch("/api/auth/meta");
@@ -1392,6 +1385,23 @@ export default function App() {
     useEffect(() => {
         if (authed !== "yes" || !selectedGuildId) return;
         loadGuildData();
+    }, [authed, selectedGuildId]);
+
+    useEffect(() => {
+        if (authed !== "yes" || !selectedGuildId) return;
+        const refreshActivityAndLogs = () => {
+            Promise.all([
+                apiCall<GuildActivityDto>(`/api/guilds/${selectedGuildId}/activity`),
+                apiCall<DeletedModifiedLogEntry[]>(`/api/logs/deleted-modified/${selectedGuildId}`),
+            ]).then(([nextActivity, nextLogs]) => {
+                setActivity(nextActivity);
+                setDmLogs(nextLogs);
+            }).catch(() => {
+                /* Keep the last known activity when a refresh is temporarily unavailable. */
+            });
+        };
+        const id = window.setInterval(refreshActivityAndLogs, 20_000);
+        return () => window.clearInterval(id);
     }, [authed, selectedGuildId]);
 
     /* ---------- Clan Wolvesville: membri + log ---------- */
@@ -2037,15 +2047,32 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
                     </div>
                     <div className="border-t border-neutral-800 pt-4">
                         <div className="flex items-center justify-between gap-3 mb-3"><div><h3 className="text-sm font-bold text-neutral-200">Dettaglio attività</h3><p className="text-[11px] text-neutral-600 mt-1">Distribuzione per utente nel periodo selezionato.</p></div><span className="text-[10px] uppercase tracking-[0.15em] text-neutral-600">{chartUsers.length}/{periodUsers.length} visibili</span></div>
-                        {chartUsers.length === 0 ? <p className="text-xs text-neutral-500">Nessun utente corrisponde al filtro attuale.</p> : (
+                        {matchingUsers.length === 0 ? <p className="text-xs text-neutral-500">Nessun utente corrisponde al filtro attuale.</p> : (
                             <div className="space-y-2.5">
-                                {chartUsers.map((user, index) => {
+                                {matchingUsers.map((user, index) => {
                                     const name = user.name;
                                     const messageWidth = totalMessages ? (user.messages / totalMessages) * 100 : 0;
                                     const voiceWidth = totalVoiceHours ? (user.voiceSeconds / 3600 / totalVoiceHours) * 100 : 0;
                                     return (
                                         <div key={user.userId} className="hermes-user-row grid grid-cols-[minmax(110px,1fr)_minmax(180px,2fr)_auto] items-center gap-3 text-xs rounded-xl px-3 py-2">
-                                            <span className="truncate font-semibold text-neutral-200 flex items-center gap-2" title={name}><i className="w-2 h-2 rounded-full" style={{ background: colors[index % colors.length] }} />{name}</span>
+                                            <span className={classNames("min-w-0 font-semibold text-neutral-200 flex items-center gap-2", hiddenUsers.has(user.userId) && "opacity-45")} title={name}>
+                                                <i className="w-2 h-2 rounded-full shrink-0" style={{ background: colors[index % colors.length] }} />
+                                                <span className="truncate">{name}</span>
+                                                <button
+                                                    type="button"
+                                                    title={hiddenUsers.has(user.userId) ? "Mostra nel grafico" : "Nascondi dal grafico"}
+                                                    aria-label={hiddenUsers.has(user.userId) ? `Mostra ${name} nel grafico` : `Nascondi ${name} dal grafico`}
+                                                    onClick={() => setHiddenUsers((current) => {
+                                                        const next = new Set(current);
+                                                        if (next.has(user.userId)) next.delete(user.userId);
+                                                        else next.add(user.userId);
+                                                        return next;
+                                                    })}
+                                                    className="shrink-0 rounded p-0.5 hover:bg-neutral-700"
+                                                >
+                                                    <img src="/assets/dashboard-icons/icon-eye.png" alt="" className={classNames("w-4 h-4 object-contain", hiddenUsers.has(user.userId) && "opacity-40")} />
+                                                </button>
+                                            </span>
                                             <div className="space-y-1">
                                                 <div className="h-1.5 bg-neutral-950 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${messageWidth}%`, background: colors[index % colors.length] }} /></div>
                                                 <div className="h-1.5 bg-neutral-950 rounded-full overflow-hidden"><div className="h-full bg-[#7D858C] rounded-full" style={{ width: `${voiceWidth}%` }} /></div>
@@ -2646,6 +2673,32 @@ const TabLogs: React.FC<{
                             </div>
                         </label>
                     </div>
+                    <Field label="Canali da ignorare nei log">
+                        <div className="max-h-52 overflow-auto space-y-1.5 rounded-lg border border-neutral-800 bg-neutral-950 p-2">
+                            {channels.length === 0 ? (
+                                <p className="text-xs text-neutral-500 px-1 py-2">Nessun canale testuale disponibile.</p>
+                            ) : channels.map((channel) => {
+                                const ignored = (conf.ignoredChannelIds ?? []).includes(channel.id);
+                                return (
+                                    <label key={channel.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-neutral-800 cursor-pointer text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={ignored}
+                                            onChange={() => {
+                                                const current = new Set(conf.ignoredChannelIds ?? []);
+                                                if (ignored) current.delete(channel.id);
+                                                else current.add(channel.id);
+                                                onChange({ ignoredChannelIds: Array.from(current) });
+                                            }}
+                                            className="accent-[#C9A227]"
+                                        />
+                                        <span className="text-neutral-400">#</span>
+                                        <span className="truncate">{channel.name}</span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </Field>
                 </div>
 
                 <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
@@ -2711,6 +2764,15 @@ const TabLogs: React.FC<{
                                 {e.type === "deleted" ? (
                                     <div className="ml-12 p-3 rounded-lg bg-rose-900/20 border border-rose-500/20 text-sm whitespace-pre-wrap">
                                         {e.deletedContent || "(contenuto non disponibile - messaggio non in cache)"}
+                                        {e.deletedAttachments && e.deletedAttachments.length > 0 && (
+                                            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                {e.deletedAttachments.map((attachment) => (
+                                                    <a key={attachment.url} href={attachment.url} target="_blank" rel="noreferrer">
+                                                        <img src={attachment.url} alt={attachment.name} className="w-full aspect-video object-cover rounded-lg border border-rose-500/20" />
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="ml-12 grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -2720,7 +2782,16 @@ const TabLogs: React.FC<{
                                         </div>
                                         <div className="p-3 rounded-lg bg-amber-900/20 border border-amber-500/20 text-sm whitespace-pre-wrap">
                                             <div className="text-[10px] uppercase font-bold text-amber-400 mb-1">Dopo</div>
-                                            {e.newContent || "(vuoto)"}
+                                            <strong>{e.newContent || "(vuoto)"}</strong>
+                                            {e.newAttachments && e.newAttachments.length > 0 && (
+                                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                                    {e.newAttachments.map((attachment) => (
+                                                        <a key={attachment.url} href={attachment.url} target="_blank" rel="noreferrer">
+                                                            <img src={attachment.url} alt={attachment.name} className="w-full aspect-video object-cover rounded-lg border border-amber-500/20" />
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}

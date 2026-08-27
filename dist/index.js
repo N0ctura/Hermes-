@@ -373,6 +373,8 @@ export async function startBot() {
     });
     client.on("voiceStateUpdate", (oldState, newState) => {
         void handleVoiceStateUpdate(oldState, newState);
+        if (newState.member?.user.bot)
+            return;
         if (oldState.channelId === newState.channelId)
             return;
         if (oldState.channelId && newState.channelId) {
@@ -653,6 +655,40 @@ export async function startBot() {
             interceptUsers: true,
         });
     }
+    function collectImageAttachments(message) {
+        const attachments = message.attachments?.values?.() ?? [];
+        return Array.from(attachments)
+            .filter((attachment) => {
+            const contentType = attachment.contentType?.toLowerCase();
+            if (contentType?.startsWith("image/"))
+                return true;
+            return /\.(avif|gif|jpe?g|png|webp)$/i.test((attachment.name ?? attachment.url ?? "").split("?")[0]);
+        })
+            .map((attachment) => ({
+            name: attachment.name || "immagine",
+            url: attachment.url,
+            contentType: attachment.contentType,
+            size: attachment.size,
+        }))
+            .filter((attachment) => Boolean(attachment.url));
+    }
+    function boldChangedPart(oldText, newText) {
+        let prefixLength = 0;
+        while (prefixLength < oldText.length && prefixLength < newText.length && oldText[prefixLength] === newText[prefixLength]) {
+            prefixLength++;
+        }
+        let suffixLength = 0;
+        while (suffixLength < oldText.length - prefixLength &&
+            suffixLength < newText.length - prefixLength &&
+            oldText[oldText.length - 1 - suffixLength] === newText[newText.length - 1 - suffixLength]) {
+            suffixLength++;
+        }
+        const prefix = newText.slice(0, prefixLength);
+        const changedEnd = newText.length - suffixLength;
+        const changed = newText.slice(prefixLength, changedEnd);
+        const suffix = newText.slice(changedEnd);
+        return changed ? `${prefix}**${changed}**${suffix}` : newText;
+    }
     async function handleLog(logEntry) {
         const safeLogEntry = {
             ...logEntry,
@@ -687,10 +723,17 @@ export async function startBot() {
                             embed.addFields({ name: "Prima", value: safeLogEntry.oldContent.length > 1024 ? safeLogEntry.oldContent.substring(0, 1021) + "..." : safeLogEntry.oldContent });
                         }
                         if (safeLogEntry.newContent) {
-                            embed.addFields({ name: "Dopo", value: safeLogEntry.newContent.length > 1024 ? safeLogEntry.newContent.substring(0, 1021) + "..." : safeLogEntry.newContent });
+                            const afterText = boldChangedPart(safeLogEntry.oldContent || "", safeLogEntry.newContent);
+                            embed.addFields({ name: "Dopo", value: afterText.length > 1024 ? afterText.substring(0, 1021) + "..." : afterText });
                         }
                     }
-                    await channel.send({ embeds: [embed] });
+                    const attachments = safeLogEntry.type === "deleted"
+                        ? safeLogEntry.deletedAttachments ?? []
+                        : safeLogEntry.newAttachments ?? [];
+                    await channel.send({
+                        embeds: [embed],
+                        files: attachments.map((attachment) => ({ attachment: attachment.url, name: attachment.name })),
+                    });
                 }
                 catch (err) {
                     logger.error({ err, guildId: logEntry.guildId }, "Errore invio log nel canale");
@@ -703,6 +746,8 @@ export async function startBot() {
             return;
         const logsConfig = getGuildLogsConfig(message.guildId);
         if (!logsConfig.enabled)
+            return;
+        if (logsConfig.ignoredChannelIds?.includes(message.channelId))
             return;
         const isBot = message.author?.bot || false;
         if (isBot && !logsConfig.interceptApps)
@@ -728,6 +773,7 @@ export async function startBot() {
             channelId: message.channelId,
             channelName: message.channel?.name || "Unknown",
             deletedContent: message.content ?? undefined,
+            deletedAttachments: collectImageAttachments(message),
         };
         await handleLog(logEntry);
     });
@@ -737,12 +783,16 @@ export async function startBot() {
         const logsConfig = getGuildLogsConfig(oldMessage.guildId);
         if (!logsConfig.enabled)
             return;
+        if (logsConfig.ignoredChannelIds?.includes(oldMessage.channelId))
+            return;
         const isBot = oldMessage.author?.bot || false;
         if (isBot && !logsConfig.interceptApps)
             return;
         if (!isBot && !logsConfig.interceptUsers)
             return;
-        if (oldMessage.content === newMessage.content)
+        const oldAttachments = collectImageAttachments(oldMessage);
+        const newAttachments = collectImageAttachments(newMessage);
+        if (oldMessage.content === newMessage.content && JSON.stringify(oldAttachments) === JSON.stringify(newAttachments))
             return;
         const logEntry = {
             id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -764,11 +814,10 @@ export async function startBot() {
             channelName: oldMessage.channel?.name || "Unknown",
             oldContent: oldMessage.content ?? undefined,
             newContent: newMessage.content ?? undefined,
+            oldAttachments,
+            newAttachments,
         };
         await handleLog(logEntry);
-    });
-    client.on("voiceStateUpdate", async (oldState, newState) => {
-        await handleVoiceStateUpdate(oldState, newState);
     });
     client.on("error", (err) => {
         if (isNetworkError(err)) {

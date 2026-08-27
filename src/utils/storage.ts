@@ -193,6 +193,16 @@ export interface DeletedModifiedLog {
   oldContent?: string;
   newContent?: string;
   deletedContent?: string;
+  oldAttachments?: DeletedModifiedAttachment[];
+  newAttachments?: DeletedModifiedAttachment[];
+  deletedAttachments?: DeletedModifiedAttachment[];
+}
+
+export interface DeletedModifiedAttachment {
+  name: string;
+  url: string;
+  contentType?: string | null;
+  size?: number;
 }
 
 export interface GuildActivityDay {
@@ -206,6 +216,7 @@ export interface GuildLogsConfig {
   guildName: string;
   enabled?: boolean;
   channelId?: string;
+  ignoredChannelIds?: string[];
   interceptApps?: boolean;
   interceptUsers?: boolean;
 }

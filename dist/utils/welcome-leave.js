@@ -7,6 +7,20 @@ import path from "path";
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const IMAGE_FETCH_TIMEOUT_MS = 10_000;
+async function fetchImage(url) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok)
+            throw new Error(`Image request failed with status ${response.status}`);
+        return Buffer.from(await response.arrayBuffer());
+    }
+    finally {
+        clearTimeout(timeout);
+    }
+}
 try {
     GlobalFonts.registerFromPath("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "WelcomeFont");
 }
@@ -240,8 +254,7 @@ async function renderCard(member, cardConfig, isLeave = false) {
                             }
                         }
                         else {
-                            const bgResponse = await fetch(layer.url);
-                            const bgBuffer = Buffer.from(await bgResponse.arrayBuffer());
+                            const bgBuffer = await fetchImage(layer.url);
                             img = await loadImage(bgBuffer);
                         }
                         ctx.drawImage(img, layer.x, layer.y, layer.width, layer.height);
@@ -274,8 +287,7 @@ async function renderCard(member, cardConfig, isLeave = false) {
                 ctx.clip();
                 try {
                     const avatarUrl = member.user.displayAvatarURL({ extension: "png", size: 256 });
-                    const avatarResponse = await fetch(avatarUrl);
-                    const avatarBuffer = Buffer.from(await avatarResponse.arrayBuffer());
+                    const avatarBuffer = await fetchImage(avatarUrl);
                     const avatar = await loadImage(avatarBuffer);
                     ctx.drawImage(avatar, layer.x, layer.y, layer.width, layer.height);
                     if (isLeave) {

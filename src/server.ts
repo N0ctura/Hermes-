@@ -439,7 +439,8 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     if (!userId || !day || !month) {
       return res.status(400).json({ error: "userId, day e month sono obbligatori" });
     }
-    if (day < 1 || day > 31 || month < 1 || month > 12) {
+    const maxDay = month >= 1 && month <= 12 ? new Date(Date.UTC(2000, month, 0)).getUTCDate() : 0;
+    if (!Number.isInteger(day) || !Number.isInteger(month) || day < 1 || day > maxDay || month < 1 || month > 12) {
       return res.status(400).json({ error: "Data non valida" });
     }
 

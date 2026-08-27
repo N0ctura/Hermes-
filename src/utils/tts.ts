@@ -24,6 +24,7 @@ import ffmpegStaticImport from "ffmpeg-static";
 const ffmpegStaticPath = ffmpegStaticImport as unknown as string | null;
 
 const ASSETS_DIR = path.join(process.cwd(), "assets");
+const TTS_REQUEST_TIMEOUT_MS = 15_000;
 if (!fs.existsSync(ASSETS_DIR)) {
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
 }
@@ -104,6 +105,12 @@ async function textToMp3File(text: string, lang: string = "it"): Promise<string>
 
         res.pipe(fileStream);
 
+        fileStream.on("error", (err) => {
+          fs.unlink(tempFilePath, () => undefined);
+          logger.error({ err, text, lang }, "TTS: errore scrittura file audio");
+          reject(err);
+        });
+
         fileStream.on("finish", () => {
           fileStream.close();
           logger.info({ tempFilePath, text }, "TTS: file audio salvato");
@@ -119,6 +126,9 @@ async function textToMp3File(text: string, lang: string = "it"): Promise<string>
       req.on("error", (err) => {
         logger.error({ err, text, lang }, "TTS: errore richiesta");
         reject(err);
+      });
+      req.setTimeout(TTS_REQUEST_TIMEOUT_MS, () => {
+        req.destroy(new Error(`Timeout richiesta TTS dopo ${TTS_REQUEST_TIMEOUT_MS}ms`));
       });
     } catch (err) {
       logger.error({ err, text }, "Errore nella funzione textToMp3File");

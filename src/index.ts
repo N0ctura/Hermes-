@@ -62,7 +62,7 @@ import * as entraCommand from "./commands/entra.js";
 import * as esciCommand from "./commands/esci.js";
 import * as entrataAutomaticaCommand from "./commands/entrata-automatica.js";
 import { BOT_CONFIG } from "./utils/config.js";
-import { loadConfig, saveConfig, initStorage, type ActivePoll, type DeletedModifiedLog, type GuildLogsConfig } from "./utils/storage.js";
+import { loadConfig, saveConfig, initStorage, type ActivePoll, type DeletedModifiedAttachment, type DeletedModifiedLog, type GuildLogsConfig } from "./utils/storage.js";
 import { closePoll, schedulePollClose } from "./utils/poll-timer.js";
 import { fetchPlayerByUsername, fetchClanById } from "./utils/wolvesville.js";
 import { generateProfileCard } from "./utils/profile-card.js";
@@ -398,6 +398,7 @@ export async function startBot(): Promise<void> {
 
     client.on("voiceStateUpdate", (oldState: VoiceState, newState: VoiceState) => {
         void handleVoiceStateUpdate(oldState, newState);
+        if (newState.member?.user.bot) return;
         if (oldState.channelId === newState.channelId) return;
         if (oldState.channelId && newState.channelId) {
             trackVoiceState({ guildId: newState.guild.id, userId: newState.id, channelId: null });
@@ -703,6 +704,43 @@ export async function startBot(): Promise<void> {
         );
     }
 
+    function collectImageAttachments(message: Message | any): DeletedModifiedAttachment[] {
+        const attachments = message.attachments?.values?.() ?? [];
+        return Array.from(attachments)
+            .filter((attachment: any) => {
+                const contentType = attachment.contentType?.toLowerCase();
+                if (contentType?.startsWith("image/")) return true;
+                return /\.(avif|gif|jpe?g|png|webp)$/i.test((attachment.name ?? attachment.url ?? "").split("?")[0]);
+            })
+            .map((attachment: any) => ({
+                name: attachment.name || "immagine",
+                url: attachment.url,
+                contentType: attachment.contentType,
+                size: attachment.size,
+            }))
+            .filter((attachment) => Boolean(attachment.url));
+    }
+
+    function boldChangedPart(oldText: string, newText: string): string {
+        let prefixLength = 0;
+        while (prefixLength < oldText.length && prefixLength < newText.length && oldText[prefixLength] === newText[prefixLength]) {
+            prefixLength++;
+        }
+        let suffixLength = 0;
+        while (
+            suffixLength < oldText.length - prefixLength &&
+            suffixLength < newText.length - prefixLength &&
+            oldText[oldText.length - 1 - suffixLength] === newText[newText.length - 1 - suffixLength]
+        ) {
+            suffixLength++;
+        }
+        const prefix = newText.slice(0, prefixLength);
+        const changedEnd = newText.length - suffixLength;
+        const changed = newText.slice(prefixLength, changedEnd);
+        const suffix = newText.slice(changedEnd);
+        return changed ? `${prefix}**${changed}**${suffix}` : newText;
+    }
+
     async function handleLog(logEntry: DeletedModifiedLog) {
         const safeLogEntry: DeletedModifiedLog = {
             ...logEntry,
@@ -742,11 +780,18 @@ export async function startBot(): Promise<void> {
                             embed.addFields({ name: "Prima", value: safeLogEntry.oldContent.length > 1024 ? safeLogEntry.oldContent.substring(0, 1021) + "..." : safeLogEntry.oldContent });
                         }
                         if (safeLogEntry.newContent) {
-                            embed.addFields({ name: "Dopo", value: safeLogEntry.newContent.length > 1024 ? safeLogEntry.newContent.substring(0, 1021) + "..." : safeLogEntry.newContent });
+                            const afterText = boldChangedPart(safeLogEntry.oldContent || "", safeLogEntry.newContent);
+                            embed.addFields({ name: "Dopo", value: afterText.length > 1024 ? afterText.substring(0, 1021) + "..." : afterText });
                         }
                     }
 
-                    await channel.send({ embeds: [embed] });
+                    const attachments = safeLogEntry.type === "deleted"
+                        ? safeLogEntry.deletedAttachments ?? []
+                        : safeLogEntry.newAttachments ?? [];
+                    await channel.send({
+                        embeds: [embed],
+                        files: attachments.map((attachment) => ({ attachment: attachment.url, name: attachment.name })),
+                    });
                 } catch (err) {
                     logger.error({ err, guildId: logEntry.guildId }, "Errore invio log nel canale");
                 }
@@ -759,6 +804,7 @@ export async function startBot(): Promise<void> {
 
         const logsConfig = getGuildLogsConfig(message.guildId);
         if (!logsConfig.enabled) return;
+        if (logsConfig.ignoredChannelIds?.includes(message.channelId)) return;
 
         const isBot = message.author?.bot || false;
         if (isBot && !logsConfig.interceptApps) return;
@@ -783,6 +829,7 @@ export async function startBot(): Promise<void> {
             channelId: message.channelId,
             channelName: (message.channel as any)?.name || "Unknown",
             deletedContent: message.content ?? undefined,
+            deletedAttachments: collectImageAttachments(message),
         };
 
         await handleLog(logEntry);
@@ -793,12 +840,15 @@ export async function startBot(): Promise<void> {
 
         const logsConfig = getGuildLogsConfig(oldMessage.guildId);
         if (!logsConfig.enabled) return;
+        if (logsConfig.ignoredChannelIds?.includes(oldMessage.channelId)) return;
 
         const isBot = oldMessage.author?.bot || false;
         if (isBot && !logsConfig.interceptApps) return;
         if (!isBot && !logsConfig.interceptUsers) return;
 
-        if (oldMessage.content === newMessage.content) return;
+        const oldAttachments = collectImageAttachments(oldMessage);
+        const newAttachments = collectImageAttachments(newMessage);
+        if (oldMessage.content === newMessage.content && JSON.stringify(oldAttachments) === JSON.stringify(newAttachments)) return;
 
         const logEntry: DeletedModifiedLog = {
             id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -820,13 +870,11 @@ export async function startBot(): Promise<void> {
             channelName: (oldMessage.channel as any)?.name || "Unknown",
             oldContent: oldMessage.content ?? undefined,
             newContent: newMessage.content ?? undefined,
+            oldAttachments,
+            newAttachments,
         };
 
         await handleLog(logEntry);
-    });
-
-    client.on("voiceStateUpdate", async (oldState: VoiceState, newState: VoiceState) => {
-        await handleVoiceStateUpdate(oldState, newState);
     });
 
     client.on("error", (err) => {

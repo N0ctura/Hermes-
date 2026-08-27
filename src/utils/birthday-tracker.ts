@@ -28,20 +28,20 @@ async function celebrateGuild(
   day: number,
   month: number,
   year: number
-): Promise<boolean> {
-  if (!guildConfig.enabled || !guildConfig.channelId) return false;
+): Promise<{ completed: boolean; celebrated: boolean }> {
+  if (!guildConfig.enabled || !guildConfig.channelId) return { completed: true, celebrated: false };
 
   const todaysBirthdays = (guildConfig.birthdays || []).filter(
     (b) => b.day === day && b.month === month && b.lastCelebratedYear !== year
   );
-  if (todaysBirthdays.length === 0) return false;
+  if (todaysBirthdays.length === 0) return { completed: true, celebrated: false };
 
   let guild;
   try {
     guild = await client.guilds.fetch(guildConfig.guildId);
   } catch (err) {
     logger.error({ err, guildId: guildConfig.guildId }, "Birthday: impossibile recuperare il server");
-    return false;
+    return { completed: false, celebrated: false };
   }
 
   let channel: TextChannel | null = null;
@@ -50,9 +50,9 @@ async function celebrateGuild(
     if (ch?.isTextBased()) channel = ch as TextChannel;
   } catch (err) {
     logger.error({ err, guildId: guildConfig.guildId }, "Birthday: canale non trovato");
-    return false;
+    return { completed: false, celebrated: false };
   }
-  if (!channel) return false;
+  if (!channel) return { completed: false, celebrated: false };
 
   let anyCelebrated = false;
 
@@ -110,24 +110,27 @@ async function celebrateGuild(
     }
   }
 
-  return anyCelebrated;
+  return { completed: true, celebrated: anyCelebrated };
 }
 
-async function runBirthdayCheck(client: Client): Promise<void> {
+async function runBirthdayCheck(client: Client): Promise<boolean> {
   const { day, month, year } = romeDayMonth();
   const config = loadConfig();
   const guildConfigs = config.birthdayConfigs || [];
   if (guildConfigs.length === 0) return;
 
   let changed = false;
+  let completed = true;
   for (const gc of guildConfigs) {
-    const didCelebrate = await celebrateGuild(client, gc, day, month, year);
-    if (didCelebrate) changed = true;
+    const result = await celebrateGuild(client, gc, day, month, year);
+    if (result.celebrated) changed = true;
+    if (!result.completed) completed = false;
   }
 
   if (changed) {
     saveConfig({ ...loadConfig(), birthdayConfigs: guildConfigs });
   }
+  return completed;
 }
 
 export function startBirthdayScheduler(client: Client): void {
@@ -136,8 +139,8 @@ export function startBirthdayScheduler(client: Client): void {
 
   // Se il bot riparte in un giorno diverso dall'ultimo controllo, recupera subito gli auguri di oggi.
   if (config.birthdayLastCheckedDate !== today) {
-    void runBirthdayCheck(client).finally(() => {
-      saveConfig({ ...loadConfig(), birthdayLastCheckedDate: today });
+    void runBirthdayCheck(client).then((completed) => {
+      if (completed) saveConfig({ ...loadConfig(), birthdayLastCheckedDate: today });
     });
   }
 
@@ -146,8 +149,8 @@ export function startBirthdayScheduler(client: Client): void {
     const cfg = loadConfig();
     if (cfg.birthdayLastCheckedDate === key) return;
 
-    void runBirthdayCheck(client).finally(() => {
-      saveConfig({ ...loadConfig(), birthdayLastCheckedDate: key });
+    void runBirthdayCheck(client).then((completed) => {
+      if (completed) saveConfig({ ...loadConfig(), birthdayLastCheckedDate: key });
     });
   }, CHECK_INTERVAL_MS);
 

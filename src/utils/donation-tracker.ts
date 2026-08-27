@@ -205,7 +205,7 @@ async function pollOnce(client: Client): Promise<void> {
     ]);
     if (ledger.length === 0) return;
 
-    const existingIds = new Set((config.donationHistory ?? []).map((e) => e.id));
+    const existingEntries = new Map((config.donationHistory ?? []).map((entry) => [entry.id, entry]));
     const alreadyNotified = new Set(tracking.recentEventIds ?? []);
 
     const sorted = [...ledger].sort(
@@ -227,7 +227,8 @@ async function pollOnce(client: Client): Promise<void> {
 
       const donation = getDonationAmount(tx);
       if (!donation) continue;
-      if (existingIds.has(tx.id)) continue;
+      const existingEntry = existingEntries.get(tx.id);
+      if (existingEntry && (existingEntry.notificationMessageId || alreadyNotified.has(tx.id))) continue;
 
       const wvUsername = tx.playerUsername;
       if (!wvUsername) {
@@ -287,7 +288,7 @@ async function pollOnce(client: Client): Promise<void> {
             "donation-tracker: nessun canale tempio/fallback risolto, notifica saltata"
           );
         }
-        newNotifiedIds.push(tx.id);
+        if (notificationMessageId) newNotifiedIds.push(tx.id);
       }
 
       const entry = transactionToDonationEntry(tx, donation, notificationMessageId, notificationChannelId);
@@ -298,7 +299,8 @@ async function pollOnce(client: Client): Promise<void> {
       return;
     }
 
-    const mergedHistory = [...newHistory, ...(config.donationHistory ?? [])]
+    const newIds = new Set(newHistory.map((entry) => entry.id));
+    const mergedHistory = [...newHistory, ...(config.donationHistory ?? []).filter((entry) => !newIds.has(entry.id))]
       .sort(
         (a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime()
       )
