@@ -372,6 +372,7 @@ export async function startBot() {
         }
     });
     client.on("voiceStateUpdate", (oldState, newState) => {
+        void handleVoiceStateUpdate(oldState, newState);
         if (oldState.channelId === newState.channelId)
             return;
         if (oldState.channelId && newState.channelId) {

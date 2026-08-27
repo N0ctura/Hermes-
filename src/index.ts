@@ -397,6 +397,7 @@ export async function startBot(): Promise<void> {
     });
 
     client.on("voiceStateUpdate", (oldState: VoiceState, newState: VoiceState) => {
+        void handleVoiceStateUpdate(oldState, newState);
         if (oldState.channelId === newState.channelId) return;
         if (oldState.channelId && newState.channelId) {
             trackVoiceState({ guildId: newState.guild.id, userId: newState.id, channelId: null });

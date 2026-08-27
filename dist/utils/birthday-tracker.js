@@ -68,10 +68,20 @@ async function celebrateGuild(client, guildConfig, day, month, year) {
             const wishText = substituteBirthdayPlaceholders(template.replaceAll("{USERNAME}", `<@${entry.userId}>`), cardData);
             // Ruoli da avvisare (es. "Membri"), impostabili dalla dashboard, così l'augurio
             // arriva a tutti e non solo a chi ha già il canale compleanni sott'occhio.
-            const validRoleIds = (guildConfig.mentionRoleIds || []).filter((id) => guild.roles.cache.has(id));
+            const configuredRoleIds = guildConfig.mentionRoleIds || [];
+            if (configuredRoleIds.length > 0) {
+                await guild.roles.fetch().catch((err) => {
+                    logger.warn({ err, guildId: guildConfig.guildId }, "Compleanno: impossibile aggiornare la cache dei ruoli");
+                });
+            }
+            const validRoleIds = configuredRoleIds.filter((id) => guild.roles.cache.has(id));
             const roleMentions = validRoleIds.map((id) => `<@&${id}>`).join(" ");
             const content = roleMentions ? `${roleMentions}\n${wishText}` : wishText;
-            await channel.send({ content, files: [attachment] });
+            await channel.send({
+                content,
+                files: [attachment],
+                allowedMentions: { roles: validRoleIds },
+            });
             entry.lastCelebratedYear = year;
             anyCelebrated = true;
             logger.info({ guildId: guildConfig.guildId, userId: entry.userId }, "Auguri di compleanno inviati");
