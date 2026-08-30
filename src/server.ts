@@ -327,12 +327,17 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       .setFooter({ text: config.guildName || "Hermes Daily" });
   }
 
-  function buildDailyMissionEmbed(config: Partial<GuildDailyConfig>): EmbedBuilder {
-    const content = buildDailyMessageText(config);
+  function buildDailyMissionEmbed(client: Client, guildId: string, config: Partial<GuildDailyConfig>): EmbedBuilder {
+    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const body = [
+      roleMentions ? `${roleMentions}\n` : "",
+      buildDailyMessageText(config),
+    ].join("\n");
+
     return new EmbedBuilder()
       .setColor(0x2ecc71)
       .setTitle("📋 Missioni giornaliere")
-      .setDescription(content)
+      .setDescription(body)
       .setTimestamp(new Date())
       .setFooter({ text: "Rispondi a questo messaggio con la tua missione" });
   }
@@ -376,8 +381,11 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     if (effectiveMissionChannelId) {
       const channel = await discordClient.channels.fetch(effectiveMissionChannelId).catch(() => null);
       if (channel && "send" in channel) {
+        const roleMentions = buildDailyRoleMentions(discordClient, guildId, next.mentionRoleIds);
         const sent = await (channel as any).send({
-          embeds: [buildDailyMissionEmbed({ ...next, missionsPrompt: next.missionsPrompt || "Rispondi a questo messaggio con la tua missione.", participants: [] })],
+          content: roleMentions || undefined,
+          allowedMentions: { roles: Array.isArray(next.mentionRoleIds) ? next.mentionRoleIds.filter(Boolean) : [] },
+          embeds: [buildDailyMissionEmbed(discordClient, guildId, { ...next, missionsPrompt: next.missionsPrompt || "Rispondi a questo messaggio con la tua missione.", participants: [] })],
         }).catch(() => null);
         if (sent) next.missionsMessageId = sent.id;
       }
