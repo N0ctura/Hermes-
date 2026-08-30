@@ -2370,11 +2370,17 @@ const TabDaily: React.FC<{
 
     const safeRoles = Array.isArray(roles) ? roles : [];
     const safeChannels = Array.isArray(channels) ? channels : [];
-    const selectedRoles = new Set(conf.mentionRoleIds ?? []);
-    const toggleRole = (roleId: string) => {
-        const next = new Set(selectedRoles);
+    const hostSelectedRoles = new Set(conf.hostMentionRoleIds ?? conf.mentionRoleIds ?? []);
+    const missionSelectedRoles = new Set(conf.missionsMentionRoleIds ?? conf.mentionRoleIds ?? []);
+    const toggleHostRole = (roleId: string) => {
+        const next = new Set(hostSelectedRoles);
         next.has(roleId) ? next.delete(roleId) : next.add(roleId);
-        onSave({ mentionRoleIds: Array.from(next) });
+        onSave({ hostMentionRoleIds: Array.from(next) });
+    };
+    const toggleMissionRole = (roleId: string) => {
+        const next = new Set(missionSelectedRoles);
+        next.has(roleId) ? next.delete(roleId) : next.add(roleId);
+        onSave({ missionsMentionRoleIds: Array.from(next) });
     };
 
     return (
@@ -2420,15 +2426,39 @@ const TabDaily: React.FC<{
                 <p className="text-xs text-neutral-400 mb-3">Puoi usare <code className="text-emerald-300">{"{ROLE}"}</code> oppure <code className="text-emerald-300">{"{ROLES}"}</code> nel messaggio host per inserire automaticamente queste menzioni.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[220px] overflow-auto pr-2">
                     {safeRoles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
-                        const isSelected = selectedRoles.has(r.id);
+                        const isSelected = hostSelectedRoles.has(r.id);
                         return (
                             <button
-                                key={r.id}
+                                key={`host-${r.id}`}
                                 type="button"
-                                onClick={() => toggleRole(r.id)}
+                                onClick={() => toggleHostRole(r.id)}
                                 className={classNames(
                                     "text-left px-3 py-2.5 rounded-xl border inline-flex items-center gap-3 transition-colors",
                                     isSelected ? "bg-[#C9A227]/10 border-[#C9A227]/40" : "bg-neutral-950 border-neutral-800 hover:bg-neutral-800"
+                                )}
+                            >
+                                <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: `#${r.color.toString(16).padStart(6, "0")}`, opacity: r.color === 0 ? 0.5 : 1 }} />
+                                <span className="truncate text-sm font-medium">{r.name}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-neutral-100 mb-3">Ruoli da taggare nel messaggio delle missioni</h3>
+                <p className="text-xs text-neutral-400 mb-3">Questi ruoli vengono aggiunti anche al messaggio live delle missioni, così la notifica arriva anche lì.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[220px] overflow-auto pr-2">
+                    {safeRoles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
+                        const isSelected = missionSelectedRoles.has(r.id);
+                        return (
+                            <button
+                                key={`mission-${r.id}`}
+                                type="button"
+                                onClick={() => toggleMissionRole(r.id)}
+                                className={classNames(
+                                    "text-left px-3 py-2.5 rounded-xl border inline-flex items-center gap-3 transition-colors",
+                                    isSelected ? "bg-emerald-500/10 border-emerald-500/40" : "bg-neutral-950 border-neutral-800 hover:bg-neutral-800"
                                 )}
                             >
                                 <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: `#${r.color.toString(16).padStart(6, "0")}`, opacity: r.color === 0 ? 0.5 : 1 }} />

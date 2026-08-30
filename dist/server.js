@@ -240,25 +240,48 @@ export async function startWebServer(discordClient) {
             dailyTime: "20:00",
             hostMessage: "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.",
             missionsPrompt: "Rispondi a questo messaggio con la tua missione e il tuo nome, ad esempio: @Tuonome: farm 20 boss",
+            hostMentionRoleIds: [],
+            missionsMentionRoleIds: [],
             participants: [],
         };
     }
-    function buildDailyMessageText(config) {
+    function resolveDailyHostMentions(config) {
+        if (Array.isArray(config.hostMentionRoleIds))
+            return config.hostMentionRoleIds.filter(Boolean);
+        if (Array.isArray(config.mentionRoleIds))
+            return config.mentionRoleIds.filter(Boolean);
+        return [];
+    }
+    function resolveDailyMissionMentions(config) {
+        if (Array.isArray(config.missionsMentionRoleIds))
+            return config.missionsMentionRoleIds.filter(Boolean);
+        if (Array.isArray(config.mentionRoleIds))
+            return config.mentionRoleIds.filter(Boolean);
+        return [];
+    }
+    function buildDailyCopyText(config) {
         const participants = Array.isArray(config.participants) ? config.participants : [];
+        if (!participants.length)
+            return "Nessuna missione registrata ancora.";
+        return participants
+            .map((p) => {
+            const name = p.username ? `@${p.username}` : `<@${p.userId}>`;
+            return `${name}: ${p.text}`;
+        })
+            .join("\n");
+    }
+    function buildDailyMessageText(config) {
         const lines = [
             "📅 Daily missioni",
             "",
             config.missionsPrompt || "Rispondi a questo messaggio con la tua missione.",
         ];
-        if (!participants.length) {
-            lines.push("", "Nessuna missione registrata ancora.");
+        const copyText = buildDailyCopyText(config);
+        if (!Array.isArray(config.participants) || !config.participants.length) {
+            lines.push("", copyText);
             return lines.join("\n");
         }
-        lines.push("");
-        for (const p of participants) {
-            const name = p.username ? `@${p.username}` : `<@${p.userId}>`;
-            lines.push(`${name}: ${p.text}`);
-        }
+        lines.push("", copyText);
         return lines.join("\n");
     }
     function buildDailyRoleMentions(client, guildId, mentionRoleIds) {
@@ -272,7 +295,7 @@ export async function startWebServer(discordClient) {
             .join(" ");
     }
     function buildDailyHostEmbed(client, guildId, config) {
-        const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+        const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyHostMentions(config));
         const body = (config.hostMessage || "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.")
             .replace(/\{ROLE\}/gi, roleMentions || "@everyone")
             .replace(/\{ROLES\}/gi, roleMentions || "@everyone");
@@ -283,12 +306,16 @@ export async function startWebServer(discordClient) {
             .setTimestamp(new Date())
             .setFooter({ text: config.guildName || "Hermes Daily" });
     }
-    function buildDailyMissionEmbed(config) {
-        const content = buildDailyMessageText(config);
+    function buildDailyMissionEmbed(client, guildId, config) {
+        const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
+        const body = [
+            roleMentions ? `${roleMentions}\n` : "",
+            buildDailyMessageText(config),
+        ].join("\n");
         return new EmbedBuilder()
             .setColor(0x2ecc71)
             .setTitle("📋 Missioni giornaliere")
-            .setDescription(content)
+            .setDescription(body)
             .setTimestamp(new Date())
             .setFooter({ text: "Rispondi a questo messaggio con la tua missione" });
     }
@@ -313,6 +340,8 @@ export async function startWebServer(discordClient) {
             enabled: true,
             hostChannelId: effectiveHostChannelId,
             missionsChannelId: effectiveMissionChannelId,
+            hostMentionRoleIds: resolveDailyHostMentions(current),
+            missionsMentionRoleIds: resolveDailyMissionMentions(current),
             lastTriggeredDate: new Date().toISOString(),
             participants: [],
         };
@@ -320,7 +349,7 @@ export async function startWebServer(discordClient) {
             const hostChannel = await discordClient.channels.fetch(effectiveHostChannelId).catch(() => null);
             if (hostChannel && "send" in hostChannel) {
                 const sent = await hostChannel.send({
-                    content: (next.mentionRoleIds ?? []).length ? buildDailyRoleMentions(discordClient, guildId, next.mentionRoleIds) || "@everyone" : undefined,
+                    content: resolveDailyHostMentions(next).length ? buildDailyRoleMentions(discordClient, guildId, resolveDailyHostMentions(next)) || "@everyone" : undefined,
                     embeds: [buildDailyHostEmbed(discordClient, guildId, next)],
                 }).catch(() => null);
                 if (sent)
@@ -330,8 +359,12 @@ export async function startWebServer(discordClient) {
         if (effectiveMissionChannelId) {
             const channel = await discordClient.channels.fetch(effectiveMissionChannelId).catch(() => null);
             if (channel && "send" in channel) {
+                const roleMentions = buildDailyRoleMentions(discordClient, guildId, resolveDailyMissionMentions(next));
+                const copyText = buildDailyCopyText(next);
                 const sent = await channel.send({
-                    embeds: [buildDailyMissionEmbed({ ...next, missionsPrompt: next.missionsPrompt || "Rispondi a questo messaggio con la tua missione.", participants: [] })],
+                    content: roleMentions ? `${roleMentions}\n${copyText}` : copyText,
+                    allowedMentions: { roles: resolveDailyMissionMentions(next) },
+                    embeds: [buildDailyMissionEmbed(discordClient, guildId, next)],
                 }).catch(() => null);
                 if (sent)
                     next.missionsMessageId = sent.id;

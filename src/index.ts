@@ -216,23 +216,42 @@ function buildDailyRoleMentions(client: Client, guildId: string, mentionRoleIds?
         .join(" ");
 }
 
-function buildDailyMessageText(config: any): string {
+function resolveDailyHostMentions(config: any): string[] {
+    if (Array.isArray(config?.hostMentionRoleIds)) return config.hostMentionRoleIds.filter(Boolean);
+    if (Array.isArray(config?.mentionRoleIds)) return config.mentionRoleIds.filter(Boolean);
+    return [];
+}
+
+function resolveDailyMissionMentions(config: any): string[] {
+    if (Array.isArray(config?.missionsMentionRoleIds)) return config.missionsMentionRoleIds.filter(Boolean);
+    if (Array.isArray(config?.mentionRoleIds)) return config.mentionRoleIds.filter(Boolean);
+    return [];
+}
+
+function buildDailyCopyText(config: any): string {
     const participants = Array.isArray(config.participants) ? config.participants : [];
+    if (!participants.length) return "Nessuna missione registrata ancora.";
+    return participants
+        .map((p: any) => {
+            const name = p.userId ? `<@${p.userId}>` : p.username ? `@${p.username}` : "utente";
+            return `${name}: ${p.text}`;
+        })
+        .join("\n");
+}
+
+function buildDailyMessageText(config: any): string {
     const lines: string[] = ["📅 Daily missioni", "", config.missionsPrompt || "Rispondi a questo messaggio con la tua missione."];
-    if (!participants.length) {
-        lines.push("", "Nessuna missione registrata ancora.");
+    const copyText = buildDailyCopyText(config);
+    if (!Array.isArray(config.participants) || !config.participants.length) {
+        lines.push("", copyText);
         return lines.join("\n");
     }
-    lines.push("");
-    for (const p of participants) {
-        const name = p.username ? `@${p.username}` : "<@" + p.userId + ">";
-        lines.push(`${name}: ${p.text}`);
-    }
+    lines.push("", copyText);
     return lines.join("\n");
 }
 
 function buildDailyHostEmbed(client: Client, guildId: string, config: any): EmbedBuilder {
-    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyHostMentions(config));
     const body = (config.hostMessage || "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.")
         .replace(/\{ROLE\}/gi, roleMentions || "@everyone")
         .replace(/\{ROLES\}/gi, roleMentions || "@everyone");
@@ -246,7 +265,7 @@ function buildDailyHostEmbed(client: Client, guildId: string, config: any): Embe
 }
 
 function buildDailyMissionEmbed(client: Client, guildId: string, config: any): EmbedBuilder {
-    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
     const body = [
         roleMentions ? `${roleMentions}\n` : "",
         buildDailyMessageText(config),
@@ -266,10 +285,11 @@ async function updateDailyMissionMessage(client: Client, guildId: string, config
     if (!channel || !channel.isTextBased()) return;
     const message = await channel.messages.fetch(config.missionsMessageId).catch(() => null);
     if (!message) return;
-    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
+    const copyText = buildDailyCopyText(config);
     await message.edit({
-        content: roleMentions || undefined,
-        allowedMentions: { roles: Array.isArray(config.mentionRoleIds) ? config.mentionRoleIds.filter(Boolean) : [] },
+        content: roleMentions ? `${roleMentions}\n${copyText}` : copyText,
+        allowedMentions: { roles: resolveDailyMissionMentions(config) },
         embeds: [buildDailyMissionEmbed(client, guildId, config)],
     });
 }
@@ -306,10 +326,11 @@ async function triggerDailyForGuild(client: Client, guildId: string, config: any
     if (target.missionsChannelId) {
         const missionsChannel = await client.channels.fetch(target.missionsChannelId).catch(() => null);
         if (missionsChannel && "send" in missionsChannel) {
-            const roleMentions = buildDailyRoleMentions(client, guildId, target.mentionRoleIds);
+            const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(target));
+            const content = roleMentions ? `${roleMentions}\n${buildDailyCopyText({ ...nextTarget, missionsPrompt: prompt, participants: [] })}` : buildDailyCopyText({ ...nextTarget, missionsPrompt: prompt, participants: [] });
             const sent = await (missionsChannel as any).send({
-                content: roleMentions || undefined,
-                allowedMentions: { roles: Array.isArray(target.mentionRoleIds) ? target.mentionRoleIds.filter(Boolean) : [] },
+                content,
+                allowedMentions: { roles: resolveDailyMissionMentions(target) },
                 embeds: [buildDailyMissionEmbed(client, guildId, { ...nextTarget, missionsPrompt: prompt, participants: [] })],
             }).catch(() => null);
             if (sent) nextTarget.missionsMessageId = sent.id;

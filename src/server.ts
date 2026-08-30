@@ -278,28 +278,47 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       dailyTime: "20:00",
       hostMessage: "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.",
       missionsPrompt: "Rispondi a questo messaggio con la tua missione e il tuo nome, ad esempio: @Tuonome: farm 20 boss",
+      hostMentionRoleIds: [],
+      missionsMentionRoleIds: [],
       participants: [],
     };
   }
 
-  function buildDailyMessageText(config: Partial<GuildDailyConfig>): string {
+  function resolveDailyHostMentions(config: Partial<GuildDailyConfig>): string[] {
+    if (Array.isArray(config.hostMentionRoleIds)) return config.hostMentionRoleIds.filter(Boolean);
+    if (Array.isArray(config.mentionRoleIds)) return config.mentionRoleIds.filter(Boolean);
+    return [];
+  }
+
+  function resolveDailyMissionMentions(config: Partial<GuildDailyConfig>): string[] {
+    if (Array.isArray(config.missionsMentionRoleIds)) return config.missionsMentionRoleIds.filter(Boolean);
+    if (Array.isArray(config.mentionRoleIds)) return config.mentionRoleIds.filter(Boolean);
+    return [];
+  }
+
+  function buildDailyCopyText(config: Partial<GuildDailyConfig>): string {
     const participants = Array.isArray(config.participants) ? config.participants : [];
+    if (!participants.length) return "Nessuna missione registrata ancora.";
+    return participants
+      .map((p) => {
+        const name = p.userId ? `<@${p.userId}>` : p.username ? `@${p.username}` : "utente";
+        return `${name}: ${p.text}`;
+      })
+      .join("\n");
+  }
+
+  function buildDailyMessageText(config: Partial<GuildDailyConfig>): string {
     const lines: string[] = [
       "📅 Daily missioni",
       "",
       config.missionsPrompt || "Rispondi a questo messaggio con la tua missione.",
     ];
-
-    if (!participants.length) {
-      lines.push("", "Nessuna missione registrata ancora.");
+    const copyText = buildDailyCopyText(config);
+    if (!Array.isArray(config.participants) || !config.participants.length) {
+      lines.push("", copyText);
       return lines.join("\n");
     }
-
-    lines.push("");
-    for (const p of participants) {
-      const name = p.username ? `@${p.username}` : `<@${p.userId}>`;
-      lines.push(`${name}: ${p.text}`);
-    }
+    lines.push("", copyText);
     return lines.join("\n");
   }
 
@@ -314,7 +333,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
   }
 
   function buildDailyHostEmbed(client: Client, guildId: string, config: Partial<GuildDailyConfig>): EmbedBuilder {
-    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyHostMentions(config));
     const body = (config.hostMessage || "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.")
       .replace(/\{ROLE\}/gi, roleMentions || "@everyone")
       .replace(/\{ROLES\}/gi, roleMentions || "@everyone");
@@ -328,7 +347,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
   }
 
   function buildDailyMissionEmbed(client: Client, guildId: string, config: Partial<GuildDailyConfig>): EmbedBuilder {
-    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
     const body = [
       roleMentions ? `${roleMentions}\n` : "",
       buildDailyMessageText(config),
@@ -363,6 +382,8 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       enabled: true,
       hostChannelId: effectiveHostChannelId,
       missionsChannelId: effectiveMissionChannelId,
+      hostMentionRoleIds: resolveDailyHostMentions(current),
+      missionsMentionRoleIds: resolveDailyMissionMentions(current),
       lastTriggeredDate: new Date().toISOString(),
       participants: [],
     };
@@ -371,7 +392,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       const hostChannel = await discordClient.channels.fetch(effectiveHostChannelId).catch(() => null);
       if (hostChannel && "send" in hostChannel) {
         const sent = await (hostChannel as any).send({
-          content: (next.mentionRoleIds ?? []).length ? buildDailyRoleMentions(discordClient, guildId, next.mentionRoleIds) || "@everyone" : undefined,
+          content: resolveDailyHostMentions(next).length ? buildDailyRoleMentions(discordClient, guildId, resolveDailyHostMentions(next)) || "@everyone" : undefined,
           embeds: [buildDailyHostEmbed(discordClient, guildId, next)],
         }).catch(() => null);
         if (sent) next.hostMessageId = sent.id;
@@ -381,18 +402,18 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     if (effectiveMissionChannelId) {
       const channel = await discordClient.channels.fetch(effectiveMissionChannelId).catch(() => null);
       if (channel && "send" in channel) {
-        const roleMentions = buildDailyRoleMentions(discordClient, guildId, next.mentionRoleIds);
+        const roleMentions = buildDailyRoleMentions(discordClient, guildId, resolveDailyMissionMentions(next));
+        const copyText = buildDailyCopyText(next);
         const sent = await (channel as any).send({
-          content: roleMentions || undefined,
-          allowedMentions: { roles: Array.isArray(next.mentionRoleIds) ? next.mentionRoleIds.filter(Boolean) : [] },
-          embeds: [buildDailyMissionEmbed(discordClient, guildId, { ...next, missionsPrompt: next.missionsPrompt || "Rispondi a questo messaggio con la tua missione.", participants: [] })],
+          content: roleMentions ? `${roleMentions}\n${copyText}` : copyText,
+          allowedMentions: { roles: resolveDailyMissionMentions(next) },
+          embeds: [buildDailyMissionEmbed(discordClient, guildId, next)],
         }).catch(() => null);
         if (sent) next.missionsMessageId = sent.id;
       }
     }
 
-    if (idx >= 0) all[idx] = next;
-    else all.push(next);
+    if (idx >= 0) all[idx] = next; else all.push(next);
     saveConfig({ ...cfg, dailyConfigs: all });
     return ensureGuildDaily(all, guildId, guildName);
   }

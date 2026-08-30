@@ -333,6 +333,9 @@ export interface GuildDailyConfig {
   enabled?: boolean;
   hostChannelId?: string;
   hostMessage?: string;
+  hostMentionRoleIds?: string[];
+  missionsMentionRoleIds?: string[];
+  /** @deprecated use hostMentionRoleIds / missionsMentionRoleIds */
   mentionRoleIds?: string[];
   missionsChannelId?: string;
   missionsPrompt?: string;
