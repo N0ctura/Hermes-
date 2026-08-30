@@ -228,12 +228,10 @@ function resolveDailyMissionMentions(config: any): string[] {
     return [];
 }
 
-function resolveDailyParticipantLabel(client: Client, guildId: string, participant: any): string {
+function resolveDailyParticipantName(client: Client, guildId: string, participant: any): string {
     const guild = client.guilds.cache.get(guildId);
     const member = guild?.members.cache.get(participant?.userId ?? "");
-    const displayName = member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
-    if (participant?.userId) return `<@${participant.userId}>`;
-    return `@${displayName}`;
+    return member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
 }
 
 function normalizeDailyParticipantEntry(client: Client, guildId: string, participant: any): any {
@@ -248,22 +246,26 @@ function normalizeDailyParticipantEntry(client: Client, guildId: string, partici
     };
 }
 
-function buildDailyCopyText(client: Client, guildId: string, config: any): string {
-    const participants = Array.isArray(config.participants) ? config.participants.map((p: any) => normalizeDailyParticipantEntry(client, guildId, p)) : [];
+function buildDailyListText(client: Client, guildId: string, config: any): string {
+    const participants = Array.isArray(config.participants)
+        ? config.participants.map((p: any) => normalizeDailyParticipantEntry(client, guildId, p))
+        : [];
+
     if (!participants.length) return "Nessuna missione registrata ancora.";
+
     return participants
-        .map((p: any) => `${resolveDailyParticipantLabel(client, guildId, p)}: ${p.text}`)
+        .map((p: any) => `${resolveDailyParticipantName(client, guildId, p)}: ${p.text}`)
         .join("\n");
 }
 
 function buildDailyMessageText(client: Client, guildId: string, config: any): string {
-    const lines: string[] = ["📅 Daily missioni", "", config.missionsPrompt || "Rispondi a questo messaggio con la tua missione."];
-    const copyText = buildDailyCopyText(client, guildId, config);
-    if (!Array.isArray(config.participants) || !config.participants.length) {
-        lines.push("", copyText);
-        return lines.join("\n");
-    }
-    lines.push("", copyText);
+    const lines: string[] = [
+        "📅 Daily missioni",
+        "",
+        config.missionsPrompt || "Rispondi a questo messaggio con la tua missione.",
+    ];
+    const listText = buildDailyListText(client, guildId, config);
+    lines.push("", listText);
     return lines.join("\n");
 }
 
