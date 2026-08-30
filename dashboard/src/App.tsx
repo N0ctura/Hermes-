@@ -2356,12 +2356,20 @@ const TabAutorole: React.FC<{
 
 const TabDaily: React.FC<{
     channels: DiscordChannel[];
+    roles: DiscordRole[];
     conf: GuildDailyConfig | null;
     onSave: (patch: Partial<GuildDailyConfig>) => void;
     onRunTest: () => void;
     onCloseTest: () => void;
-}> = ({ channels, conf, onSave, onRunTest, onCloseTest }) => {
+}> = ({ channels, roles, conf, onSave, onRunTest, onCloseTest }) => {
     if (!conf) return null;
+
+    const selectedRoles = new Set(conf.mentionRoleIds ?? []);
+    const toggleRole = (roleId: string) => {
+        const next = new Set(selectedRoles);
+        next.has(roleId) ? next.delete(roleId) : next.add(roleId);
+        onSave({ mentionRoleIds: Array.from(next) });
+    };
 
     return (
         <div className="space-y-5 animate-fade-in">
@@ -2398,6 +2406,30 @@ const TabDaily: React.FC<{
                     >
                         🧹 Chiudi messaggio live
                     </button>
+                </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-neutral-100 mb-3">Ruoli da taggare nel messaggio host</h3>
+                <p className="text-xs text-neutral-400 mb-3">Puoi usare <code className="text-emerald-300">{"{ROLE}"}</code> oppure <code className="text-emerald-300">{"{ROLES}"}</code> nel messaggio host per inserire automaticamente queste menzioni.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[220px] overflow-auto pr-2">
+                    {roles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
+                        const isSelected = selectedRoles.has(r.id);
+                        return (
+                            <button
+                                key={r.id}
+                                type="button"
+                                onClick={() => toggleRole(r.id)}
+                                className={classNames(
+                                    "text-left px-3 py-2.5 rounded-xl border inline-flex items-center gap-3 transition-colors",
+                                    isSelected ? "bg-[#C9A227]/10 border-[#C9A227]/40" : "bg-neutral-950 border-neutral-800 hover:bg-neutral-800"
+                                )}
+                            >
+                                <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: `#${r.color.toString(16).padStart(6, "0")}`, opacity: r.color === 0 ? 0.5 : 1 }} />
+                                <span className="truncate text-sm font-medium">{r.name}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 

@@ -1,4 +1,4 @@
-import type { Client } from "discord.js";
+import { EmbedBuilder, type Client } from "discord.js";
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { existsSync } from "node:fs";
@@ -302,34 +302,81 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     return lines.join("\n");
   }
 
+  function buildDailyRoleMentions(client: Client, guildId: string, mentionRoleIds?: string[]): string {
+    const guild = client.guilds.cache.get(guildId);
+    const ids = Array.isArray(mentionRoleIds) ? mentionRoleIds.filter(Boolean) : [];
+    if (!guild || ids.length === 0) return "";
+    return ids
+      .map((roleId) => (guild.roles.cache.has(roleId) ? `<@&${roleId}>` : ""))
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function buildDailyHostEmbed(client: Client, guildId: string, config: Partial<GuildDailyConfig>): EmbedBuilder {
+    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const body = (config.hostMessage || "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.")
+      .replace(/\{ROLE\}/gi, roleMentions || "@everyone")
+      .replace(/\{ROLES\}/gi, roleMentions || "@everyone");
+
+    return new EmbedBuilder()
+      .setColor(0xc9a227)
+      .setTitle("📅 Daily")
+      .setDescription(body)
+      .setTimestamp(new Date())
+      .setFooter({ text: config.guildName || "Hermes Daily" });
+  }
+
+  function buildDailyMissionEmbed(config: Partial<GuildDailyConfig>): EmbedBuilder {
+    const content = buildDailyMessageText(config);
+    return new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setTitle("📋 Missioni giornaliere")
+      .setDescription(content)
+      .setTimestamp(new Date())
+      .setFooter({ text: "Rispondi a questo messaggio con la tua missione" });
+  }
+
   async function triggerDailyTestForGuild(guildId: string): Promise<GuildDailyConfig> {
     const cfg = loadConfig();
     const all = Array.isArray(cfg.dailyConfigs) ? [...cfg.dailyConfigs] : [];
     const idx = all.findIndex((item) => item.guildId === guildId);
     const guildName = await getGuildName(guildId);
     const current = idx >= 0 ? all[idx] : ensureGuildDaily(all, guildId, guildName);
+    const guild = discordClient.guilds.cache.get(guildId);
+    const fallbackTextChannels = guild
+      ? Array.from(guild.channels.cache.values())
+          .filter((channel) => channel && "isTextBased" in channel && channel.isTextBased())
+          .map((channel) => channel.id)
+      : [];
+    const effectiveHostChannelId = current.hostChannelId || fallbackTextChannels[0] || "";
+    const effectiveMissionChannelId = current.missionsChannelId || fallbackTextChannels[0] || "";
     const next: GuildDailyConfig = {
       ...current,
       guildId,
       guildName,
       enabled: true,
+      hostChannelId: effectiveHostChannelId,
+      missionsChannelId: effectiveMissionChannelId,
       lastTriggeredDate: new Date().toISOString(),
       participants: [],
     };
 
-    if (next.hostChannelId) {
-      const hostChannel = await discordClient.channels.fetch(next.hostChannelId).catch(() => null);
+    if (effectiveHostChannelId) {
+      const hostChannel = await discordClient.channels.fetch(effectiveHostChannelId).catch(() => null);
       if (hostChannel && "send" in hostChannel) {
-        const sent = await (hostChannel as any).send(next.hostMessage || "📅 Daily test avviato.").catch(() => null);
+        const sent = await (hostChannel as any).send({
+          content: (next.mentionRoleIds ?? []).length ? buildDailyRoleMentions(discordClient, guildId, next.mentionRoleIds) || "@everyone" : undefined,
+          embeds: [buildDailyHostEmbed(discordClient, guildId, next)],
+        }).catch(() => null);
         if (sent) next.hostMessageId = sent.id;
       }
     }
 
-    if (next.missionsChannelId) {
-      const channel = await discordClient.channels.fetch(next.missionsChannelId).catch(() => null);
+    if (effectiveMissionChannelId) {
+      const channel = await discordClient.channels.fetch(effectiveMissionChannelId).catch(() => null);
       if (channel && "send" in channel) {
         const sent = await (channel as any).send({
-          content: buildDailyMessageText({ ...next, participants: [] }),
+          embeds: [buildDailyMissionEmbed({ ...next, missionsPrompt: next.missionsPrompt || "Rispondi a questo messaggio con la tua missione.", participants: [] })],
         }).catch(() => null);
         if (sent) next.missionsMessageId = sent.id;
       }
@@ -345,28 +392,44 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     const cfg = loadConfig();
     const all = Array.isArray(cfg.dailyConfigs) ? [...cfg.dailyConfigs] : [];
     const idx = all.findIndex((item) => item.guildId === guildId);
-    if (idx < 0) return ensureGuildDaily(all, guildId, await getGuildName(guildId));
+    const guildName = await getGuildName(guildId);
+    if (idx < 0) return ensureGuildDaily(all, guildId, guildName);
 
     const current = all[idx];
+    const guild = discordClient.guilds.cache.get(guildId);
+    const fallbackTextChannels = guild
+      ? Array.from(guild.channels.cache.values())
+          .filter((channel) => channel && "isTextBased" in channel && channel.isTextBased())
+          .map((channel) => channel.id)
+      : [];
+    const effectiveMissionChannelId = current.missionsChannelId || fallbackTextChannels[0] || "";
     const next: GuildDailyConfig = {
       ...current,
+      guildId,
+      guildName,
+      missionsChannelId: effectiveMissionChannelId,
       participants: [],
       lastTriggeredDate: new Date().toISOString(),
     };
 
-    if (next.missionsChannelId && next.missionsMessageId) {
-      const channel = await discordClient.channels.fetch(next.missionsChannelId).catch(() => null);
+    if (effectiveMissionChannelId && next.missionsMessageId) {
+      const channel = await discordClient.channels.fetch(effectiveMissionChannelId).catch(() => null);
       if (channel && "messages" in channel) {
         const msg = await (channel as any).messages.fetch(next.missionsMessageId).catch(() => null);
         if (msg) {
           await msg.edit({ content: "📅 Daily chiusa: la lista è stata azzerata dal test di controllo." });
         }
       }
+    } else if (effectiveMissionChannelId) {
+      const channel = await discordClient.channels.fetch(effectiveMissionChannelId).catch(() => null);
+      if (channel && "send" in channel) {
+        await (channel as any).send({ content: "📅 Daily chiusa: la lista è stata azzerata dal test di controllo." }).catch(() => null);
+      }
     }
 
     all[idx] = next;
     saveConfig({ ...cfg, dailyConfigs: all });
-    return ensureGuildDaily(all, guildId, current.guildName || await getGuildName(guildId));
+    return ensureGuildDaily(all, guildId, current.guildName || guildName);
   }
 
   async function getGuildName(id: string): Promise<string> {

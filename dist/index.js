@@ -179,6 +179,16 @@ function isAtRomeTime(date, time) {
     const { hours: nowHours, minutes: nowMinutes } = getRomeTimeParts(date);
     return nowHours === hours && nowMinutes === minutes;
 }
+function buildDailyRoleMentions(client, guildId, mentionRoleIds) {
+    const guild = client.guilds.cache.get(guildId);
+    const ids = Array.isArray(mentionRoleIds) ? mentionRoleIds.filter(Boolean) : [];
+    if (!guild || ids.length === 0)
+        return "";
+    return ids
+        .map((roleId) => guild.roles.cache.has(roleId) ? `<@&${roleId}>` : "")
+        .filter(Boolean)
+        .join(" ");
+}
 function buildDailyMessageText(config) {
     const participants = Array.isArray(config.participants) ? config.participants : [];
     const lines = ["📅 Daily missioni", "", config.missionsPrompt || "Rispondi a questo messaggio con la tua missione."];
@@ -193,6 +203,27 @@ function buildDailyMessageText(config) {
     }
     return lines.join("\n");
 }
+function buildDailyHostEmbed(client, guildId, config) {
+    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const body = (config.hostMessage || "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.")
+        .replace(/\{ROLE\}/gi, roleMentions || "@everyone")
+        .replace(/\{ROLES\}/gi, roleMentions || "@everyone");
+    return new EmbedBuilder()
+        .setColor(0xc9a227)
+        .setTitle("📅 Daily")
+        .setDescription(body)
+        .setTimestamp(new Date())
+        .setFooter({ text: config.guildName || "Hermes Daily" });
+}
+function buildDailyMissionEmbed(config) {
+    const content = buildDailyMessageText(config);
+    return new EmbedBuilder()
+        .setColor(0x2ecc71)
+        .setTitle("📋 Missioni giornaliere")
+        .setDescription(content)
+        .setTimestamp(new Date())
+        .setFooter({ text: "Rispondi a questo messaggio con la tua missione" });
+}
 async function updateDailyMissionMessage(client, guildId, config) {
     if (!config?.missionsChannelId || !config?.missionsMessageId)
         return;
@@ -202,7 +233,7 @@ async function updateDailyMissionMessage(client, guildId, config) {
     const message = await channel.messages.fetch(config.missionsMessageId).catch(() => null);
     if (!message)
         return;
-    await message.edit({ content: buildDailyMessageText(config) });
+    await message.edit({ embeds: [buildDailyMissionEmbed(config)] });
 }
 async function triggerDailyForGuild(client, guildId, config) {
     const cfg = loadConfig();
@@ -223,7 +254,10 @@ async function triggerDailyForGuild(client, guildId, config) {
     if (target.hostChannelId) {
         const hostChannel = await client.channels.fetch(target.hostChannelId).catch(() => null);
         if (hostChannel && "send" in hostChannel) {
-            const sent = await hostChannel.send(hostMessage).catch(() => null);
+            const sent = await hostChannel.send({
+                content: (target.mentionRoleIds ?? []).length ? buildDailyRoleMentions(client, guildId, target.mentionRoleIds) || "@everyone" : undefined,
+                embeds: [buildDailyHostEmbed(client, guildId, nextTarget)],
+            }).catch(() => null);
             if (sent)
                 nextTarget.hostMessageId = sent.id;
         }
@@ -231,7 +265,9 @@ async function triggerDailyForGuild(client, guildId, config) {
     if (target.missionsChannelId) {
         const missionsChannel = await client.channels.fetch(target.missionsChannelId).catch(() => null);
         if (missionsChannel && "send" in missionsChannel) {
-            const sent = await missionsChannel.send({ content: buildDailyMessageText({ ...nextTarget, missionsPrompt: prompt, participants: [] }) }).catch(() => null);
+            const sent = await missionsChannel.send({
+                embeds: [buildDailyMissionEmbed({ ...nextTarget, missionsPrompt: prompt, participants: [] })],
+            }).catch(() => null);
             if (sent)
                 nextTarget.missionsMessageId = sent.id;
         }

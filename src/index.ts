@@ -206,6 +206,16 @@ function isAtRomeTime(date: Date, time: string): boolean {
     return nowHours === hours && nowMinutes === minutes;
 }
 
+function buildDailyRoleMentions(client: Client, guildId: string, mentionRoleIds?: string[]): string {
+    const guild = client.guilds.cache.get(guildId);
+    const ids = Array.isArray(mentionRoleIds) ? mentionRoleIds.filter(Boolean) : [];
+    if (!guild || ids.length === 0) return "";
+    return ids
+        .map((roleId: string) => guild.roles.cache.has(roleId) ? `<@&${roleId}>` : "")
+        .filter(Boolean)
+        .join(" ");
+}
+
 function buildDailyMessageText(config: any): string {
     const participants = Array.isArray(config.participants) ? config.participants : [];
     const lines: string[] = ["📅 Daily missioni", "", config.missionsPrompt || "Rispondi a questo messaggio con la tua missione."];
@@ -221,13 +231,37 @@ function buildDailyMessageText(config: any): string {
     return lines.join("\n");
 }
 
+function buildDailyHostEmbed(client: Client, guildId: string, config: any): EmbedBuilder {
+    const roleMentions = buildDailyRoleMentions(client, guildId, config.mentionRoleIds);
+    const body = (config.hostMessage || "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.")
+        .replace(/\{ROLE\}/gi, roleMentions || "@everyone")
+        .replace(/\{ROLES\}/gi, roleMentions || "@everyone");
+
+    return new EmbedBuilder()
+        .setColor(0xc9a227)
+        .setTitle("📅 Daily")
+        .setDescription(body)
+        .setTimestamp(new Date())
+        .setFooter({ text: config.guildName || "Hermes Daily" });
+}
+
+function buildDailyMissionEmbed(config: any): EmbedBuilder {
+    const content = buildDailyMessageText(config);
+    return new EmbedBuilder()
+        .setColor(0x2ecc71)
+        .setTitle("📋 Missioni giornaliere")
+        .setDescription(content)
+        .setTimestamp(new Date())
+        .setFooter({ text: "Rispondi a questo messaggio con la tua missione" });
+}
+
 async function updateDailyMissionMessage(client: Client, guildId: string, config: any): Promise<void> {
     if (!config?.missionsChannelId || !config?.missionsMessageId) return;
     const channel = await client.channels.fetch(config.missionsChannelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
     const message = await channel.messages.fetch(config.missionsMessageId).catch(() => null);
     if (!message) return;
-    await message.edit({ content: buildDailyMessageText(config) });
+    await message.edit({ embeds: [buildDailyMissionEmbed(config)] });
 }
 
 async function triggerDailyForGuild(client: Client, guildId: string, config: any): Promise<void> {
@@ -251,7 +285,10 @@ async function triggerDailyForGuild(client: Client, guildId: string, config: any
     if (target.hostChannelId) {
         const hostChannel = await client.channels.fetch(target.hostChannelId).catch(() => null);
         if (hostChannel && "send" in hostChannel) {
-            const sent = await (hostChannel as any).send(hostMessage).catch(() => null);
+            const sent = await (hostChannel as any).send({
+                content: (target.mentionRoleIds ?? []).length ? buildDailyRoleMentions(client, guildId, target.mentionRoleIds) || "@everyone" : undefined,
+                embeds: [buildDailyHostEmbed(client, guildId, nextTarget)],
+            }).catch(() => null);
             if (sent) nextTarget.hostMessageId = sent.id;
         }
     }
@@ -259,7 +296,9 @@ async function triggerDailyForGuild(client: Client, guildId: string, config: any
     if (target.missionsChannelId) {
         const missionsChannel = await client.channels.fetch(target.missionsChannelId).catch(() => null);
         if (missionsChannel && "send" in missionsChannel) {
-            const sent = await (missionsChannel as any).send({ content: buildDailyMessageText({ ...nextTarget, missionsPrompt: prompt, participants: [] }) }).catch(() => null);
+            const sent = await (missionsChannel as any).send({
+                embeds: [buildDailyMissionEmbed({ ...nextTarget, missionsPrompt: prompt, participants: [] })],
+            }).catch(() => null);
             if (sent) nextTarget.missionsMessageId = sent.id;
         }
     }
