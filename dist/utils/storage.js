@@ -68,6 +68,44 @@ const DEFAULT_CONFIG = {
     pollChannelId: null,
     notifyChannelIds: [],
 };
+function normalizeDailyParticipantEntry(participant) {
+    if (!participant)
+        return null;
+    const displayName = participant.displayName || participant.username || "utente";
+    return {
+        userId: participant.userId || "",
+        username: displayName,
+        displayName,
+        text: participant.text || "",
+        addedAt: participant.addedAt || new Date().toISOString(),
+    };
+}
+function normalizeDailyConfig(config) {
+    if (!config)
+        return null;
+    const participants = Array.isArray(config.participants)
+        ? config.participants
+            .map((participant) => normalizeDailyParticipantEntry(participant))
+            .filter((participant) => Boolean(participant && participant.userId))
+        : [];
+    return {
+        guildId: config.guildId || "",
+        guildName: config.guildName || "",
+        enabled: Boolean(config.enabled),
+        hostChannelId: config.hostChannelId,
+        hostMessage: config.hostMessage,
+        hostMentionRoleIds: Array.isArray(config.hostMentionRoleIds) ? config.hostMentionRoleIds.filter(Boolean) : [],
+        missionsMentionRoleIds: Array.isArray(config.missionsMentionRoleIds) ? config.missionsMentionRoleIds.filter(Boolean) : [],
+        mentionRoleIds: Array.isArray(config.mentionRoleIds) ? config.mentionRoleIds.filter(Boolean) : [],
+        missionsChannelId: config.missionsChannelId,
+        missionsPrompt: config.missionsPrompt,
+        dailyTime: config.dailyTime || "20:00",
+        lastTriggeredDate: config.lastTriggeredDate,
+        hostMessageId: config.hostMessageId,
+        missionsMessageId: config.missionsMessageId,
+        participants,
+    };
+}
 function normalizeConfig(config) {
     return {
         ...DEFAULT_CONFIG,
@@ -102,7 +140,11 @@ function normalizeConfig(config) {
         },
         profileCardConfigs: Array.isArray(config?.profileCardConfigs) ? config.profileCardConfigs : [],
         birthdayConfigs: Array.isArray(config?.birthdayConfigs) ? config.birthdayConfigs : [],
-        dailyConfigs: Array.isArray(config?.dailyConfigs) ? config.dailyConfigs : [],
+        dailyConfigs: Array.isArray(config?.dailyConfigs)
+            ? config.dailyConfigs
+                .map((daily) => normalizeDailyConfig(daily))
+                .filter((daily) => Boolean(daily && daily.guildId))
+            : [],
         activityHistory: config?.activityHistory && typeof config.activityHistory === "object" ? config.activityHistory : {},
     };
 }

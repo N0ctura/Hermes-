@@ -203,25 +203,41 @@ function resolveDailyMissionMentions(config) {
         return config.mentionRoleIds.filter(Boolean);
     return [];
 }
-function buildDailyCopyText(config) {
-    const participants = Array.isArray(config.participants) ? config.participants : [];
+function resolveDailyParticipantName(client, guildId, participant) {
+    const guild = client.guilds.cache.get(guildId);
+    const member = guild?.members.cache.get(participant?.userId ?? "");
+    return member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
+}
+function normalizeDailyParticipantEntry(client, guildId, participant) {
+    if (!participant || !participant.userId)
+        return participant;
+    const guild = client.guilds.cache.get(guildId);
+    const member = guild?.members.cache.get(participant.userId);
+    const displayName = member?.nickname || member?.displayName || participant.displayName || participant.username || "utente";
+    return {
+        ...participant,
+        username: displayName,
+        displayName,
+    };
+}
+function buildDailyListText(client, guildId, config) {
+    const participants = Array.isArray(config.participants)
+        ? config.participants.map((p) => normalizeDailyParticipantEntry(client, guildId, p))
+        : [];
     if (!participants.length)
         return "Nessuna missione registrata ancora.";
     return participants
-        .map((p) => {
-        const name = p.username ? `@${p.username}` : `<@${p.userId}>`;
-        return `${name}: ${p.text}`;
-    })
+        .map((p) => `${resolveDailyParticipantName(client, guildId, p)}: ${p.text}`)
         .join("\n");
 }
-function buildDailyMessageText(config) {
-    const lines = ["📅 Daily missioni", "", config.missionsPrompt || "Rispondi a questo messaggio con la tua missione."];
-    const copyText = buildDailyCopyText(config);
-    if (!Array.isArray(config.participants) || !config.participants.length) {
-        lines.push("", copyText);
-        return lines.join("\n");
-    }
-    lines.push("", copyText);
+function buildDailyMessageText(client, guildId, config) {
+    const lines = [
+        "📅 Daily missioni",
+        "",
+        config.missionsPrompt || "Rispondi a questo messaggio con la tua missione.",
+    ];
+    const listText = buildDailyListText(client, guildId, config);
+    lines.push("", listText);
     return lines.join("\n");
 }
 function buildDailyHostEmbed(client, guildId, config) {
@@ -237,11 +253,9 @@ function buildDailyHostEmbed(client, guildId, config) {
         .setFooter({ text: config.guildName || "Hermes Daily" });
 }
 function buildDailyMissionEmbed(client, guildId, config) {
-    const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
-    const body = [
-        roleMentions ? `${roleMentions}\n` : "",
-        buildDailyMessageText(config),
-    ].join("\n");
+    // La menzione del ruolo va SOLO nel "content" del messaggio (vedi triggerDailyForGuild /
+    // updateDailyMissionMessage): qui non va ripetuta, altrimenti compare due volte.
+    const body = buildDailyMessageText(client, guildId, config);
     return new EmbedBuilder()
         .setColor(0x2ecc71)
         .setTitle("📋 Missioni giornaliere")
@@ -259,9 +273,8 @@ async function updateDailyMissionMessage(client, guildId, config) {
     if (!message)
         return;
     const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
-    const copyText = buildDailyCopyText(config);
     await message.edit({
-        content: roleMentions ? `${roleMentions}\n${copyText}` : copyText,
+        content: roleMentions || undefined,
         allowedMentions: { roles: resolveDailyMissionMentions(config) },
         embeds: [buildDailyMissionEmbed(client, guildId, config)],
     });
@@ -279,14 +292,16 @@ async function triggerDailyForGuild(client, guildId, config) {
     const nextTarget = {
         ...target,
         enabled: true,
+        closed: false,
         lastTriggeredDate: dateKey,
         participants: [],
     };
     if (target.hostChannelId) {
         const hostChannel = await client.channels.fetch(target.hostChannelId).catch(() => null);
         if (hostChannel && "send" in hostChannel) {
+            const hostRoleMentions = resolveDailyHostMentions(target);
             const sent = await hostChannel.send({
-                content: (target.mentionRoleIds ?? []).length ? buildDailyRoleMentions(client, guildId, target.mentionRoleIds) || "@everyone" : undefined,
+                content: hostRoleMentions.length ? buildDailyRoleMentions(client, guildId, hostRoleMentions) || "@everyone" : undefined,
                 embeds: [buildDailyHostEmbed(client, guildId, nextTarget)],
             }).catch(() => null);
             if (sent)
@@ -296,11 +311,10 @@ async function triggerDailyForGuild(client, guildId, config) {
     if (target.missionsChannelId) {
         const missionsChannel = await client.channels.fetch(target.missionsChannelId).catch(() => null);
         if (missionsChannel && "send" in missionsChannel) {
-            const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(target));
-            const content = roleMentions ? `${roleMentions}\n${buildDailyCopyText({ ...nextTarget, missionsPrompt: prompt, participants: [] })}` : buildDailyCopyText({ ...nextTarget, missionsPrompt: prompt, participants: [] });
+            const missionRoleMentions = resolveDailyMissionMentions(target);
             const sent = await missionsChannel.send({
-                content,
-                allowedMentions: { roles: resolveDailyMissionMentions(target) },
+                content: missionRoleMentions.length ? buildDailyRoleMentions(client, guildId, missionRoleMentions) || undefined : undefined,
+                allowedMentions: { roles: missionRoleMentions },
                 embeds: [buildDailyMissionEmbed(client, guildId, { ...nextTarget, missionsPrompt: prompt, participants: [] })],
             }).catch(() => null);
             if (sent)
@@ -320,6 +334,7 @@ async function resetDailyForGuild(client, guildId, config) {
     const nextTarget = {
         ...target,
         participants: [],
+        closed: true,
         lastTriggeredDate: getRomeDateKey(new Date()),
     };
     if (target.missionsChannelId && target.missionsMessageId) {
@@ -327,7 +342,7 @@ async function resetDailyForGuild(client, guildId, config) {
         if (channel && "messages" in channel) {
             const msg = await channel.messages.fetch(target.missionsMessageId).catch(() => null);
             if (msg) {
-                await msg.edit({ content: "📅 Daily chiuso — la lista è stata azzerata a mezzanotte." });
+                await msg.edit({ content: "📅 Daily chiuso — la lista è stata azzerata a mezzanotte.", embeds: [] });
             }
         }
     }
@@ -748,7 +763,7 @@ export async function startBot() {
         }
         if (guildId) {
             const config = loadConfig();
-            const dailyConfigs = (config.dailyConfigs || []).filter((entry) => entry.guildId === guildId && entry.enabled);
+            const dailyConfigs = (config.dailyConfigs || []).filter((entry) => entry.guildId === guildId && entry.enabled && !entry.closed);
             for (const daily of dailyConfigs) {
                 const missionMessageId = daily.missionsMessageId;
                 const missionsChannelId = daily.missionsChannelId;
@@ -763,16 +778,19 @@ export async function startBot() {
                     continue;
                 const participants = Array.isArray(daily.participants) ? [...daily.participants] : [];
                 const existingIndex = participants.findIndex((p) => p.userId === message.author.id);
+                const participantName = message.member?.nickname || message.member?.displayName || message.author.username;
                 const nextEntry = {
                     userId: message.author.id,
-                    username: message.author.username,
+                    username: participantName,
+                    displayName: participantName,
                     text,
                     addedAt: new Date().toISOString(),
                 };
+                const normalizedEntry = normalizeDailyParticipantEntry(client, guildId, nextEntry);
                 if (existingIndex >= 0)
-                    participants[existingIndex] = nextEntry;
+                    participants[existingIndex] = normalizedEntry;
                 else
-                    participants.push(nextEntry);
+                    participants.push(normalizedEntry);
                 const nextDaily = { ...daily, participants };
                 const allConfigs = (config.dailyConfigs || []).map((item) => item.guildId === guildId ? nextDaily : item);
                 saveConfig({ ...config, dailyConfigs: allConfigs });

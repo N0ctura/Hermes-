@@ -259,24 +259,27 @@ export async function startWebServer(discordClient) {
             return config.mentionRoleIds.filter(Boolean);
         return [];
     }
-    function buildDailyCopyText(config) {
+    function resolveDailyParticipantLabel(client, guildId, participant) {
+        const guild = client.guilds.cache.get(guildId);
+        const member = guild?.members.cache.get(participant?.userId ?? "");
+        const serverName = member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
+        return `@${serverName}`;
+    }
+    function buildDailyCopyText(client, guildId, config) {
         const participants = Array.isArray(config.participants) ? config.participants : [];
         if (!participants.length)
             return "Nessuna missione registrata ancora.";
         return participants
-            .map((p) => {
-            const name = p.username ? `@${p.username}` : `<@${p.userId}>`;
-            return `${name}: ${p.text}`;
-        })
+            .map((p) => `${resolveDailyParticipantLabel(client, guildId, p)}: ${p.text}`)
             .join("\n");
     }
-    function buildDailyMessageText(config) {
+    function buildDailyMessageText(client, guildId, config) {
         const lines = [
             "📅 Daily missioni",
             "",
             config.missionsPrompt || "Rispondi a questo messaggio con la tua missione.",
         ];
-        const copyText = buildDailyCopyText(config);
+        const copyText = buildDailyCopyText(client, guildId, config);
         if (!Array.isArray(config.participants) || !config.participants.length) {
             lines.push("", copyText);
             return lines.join("\n");
@@ -307,11 +310,8 @@ export async function startWebServer(discordClient) {
             .setFooter({ text: config.guildName || "Hermes Daily" });
     }
     function buildDailyMissionEmbed(client, guildId, config) {
-        const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
-        const body = [
-            roleMentions ? `${roleMentions}\n` : "",
-            buildDailyMessageText(config),
-        ].join("\n");
+        // La menzione del ruolo va SOLO nel "content" del messaggio, non va ripetuta qui dentro.
+        const body = buildDailyMessageText(client, guildId, config);
         return new EmbedBuilder()
             .setColor(0x2ecc71)
             .setTitle("📋 Missioni giornaliere")
@@ -338,6 +338,7 @@ export async function startWebServer(discordClient) {
             guildId,
             guildName,
             enabled: true,
+            closed: false,
             hostChannelId: effectiveHostChannelId,
             missionsChannelId: effectiveMissionChannelId,
             hostMentionRoleIds: resolveDailyHostMentions(current),
@@ -360,9 +361,8 @@ export async function startWebServer(discordClient) {
             const channel = await discordClient.channels.fetch(effectiveMissionChannelId).catch(() => null);
             if (channel && "send" in channel) {
                 const roleMentions = buildDailyRoleMentions(discordClient, guildId, resolveDailyMissionMentions(next));
-                const copyText = buildDailyCopyText(next);
                 const sent = await channel.send({
-                    content: roleMentions ? `${roleMentions}\n${copyText}` : copyText,
+                    content: roleMentions || undefined,
                     allowedMentions: { roles: resolveDailyMissionMentions(next) },
                     embeds: [buildDailyMissionEmbed(discordClient, guildId, next)],
                 }).catch(() => null);
@@ -398,6 +398,7 @@ export async function startWebServer(discordClient) {
             guildName,
             missionsChannelId: effectiveMissionChannelId,
             participants: [],
+            closed: true,
             lastTriggeredDate: new Date().toISOString(),
         };
         if (effectiveMissionChannelId && next.missionsMessageId) {
@@ -405,7 +406,7 @@ export async function startWebServer(discordClient) {
             if (channel && "messages" in channel) {
                 const msg = await channel.messages.fetch(next.missionsMessageId).catch(() => null);
                 if (msg) {
-                    await msg.edit({ content: "📅 Daily chiusa: la lista è stata azzerata dal test di controllo." });
+                    await msg.edit({ content: "📅 Daily chiusa: la lista è stata azzerata dal test di controllo.", embeds: [] });
                 }
             }
         }

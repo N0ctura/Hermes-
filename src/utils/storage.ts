@@ -344,6 +344,8 @@ export interface GuildDailyConfig {
   lastTriggeredDate?: string;
   hostMessageId?: string;
   missionsMessageId?: string;
+  /** true quando la daily è stata chiusa (a mezzanotte o manualmente): le risposte al vecchio messaggio vengono ignorate finché non riparte una nuova daily. */
+  closed?: boolean;
   participants?: DailyParticipantEntry[];
 }
 

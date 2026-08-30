@@ -284,11 +284,9 @@ function buildDailyHostEmbed(client: Client, guildId: string, config: any): Embe
 }
 
 function buildDailyMissionEmbed(client: Client, guildId: string, config: any): EmbedBuilder {
-    const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
-    const body = [
-        roleMentions ? `${roleMentions}\n` : "",
-        buildDailyMessageText(client, guildId, config),
-    ].join("\n");
+    // La menzione del ruolo va SOLO nel "content" del messaggio (vedi triggerDailyForGuild /
+    // updateDailyMissionMessage): qui non va ripetuta, altrimenti compare due volte.
+    const body = buildDailyMessageText(client, guildId, config);
 
     return new EmbedBuilder()
         .setColor(0x2ecc71)
@@ -326,6 +324,7 @@ async function triggerDailyForGuild(client: Client, guildId: string, config: any
     const nextTarget = {
         ...target,
         enabled: true,
+        closed: false,
         lastTriggeredDate: dateKey,
         participants: [],
     };
@@ -369,6 +368,7 @@ async function resetDailyForGuild(client: Client, guildId: string, config: any):
     const nextTarget = {
         ...target,
         participants: [],
+        closed: true,
         lastTriggeredDate: getRomeDateKey(new Date()),
     };
 
@@ -377,7 +377,7 @@ async function resetDailyForGuild(client: Client, guildId: string, config: any):
         if (channel && "messages" in channel) {
             const msg = await (channel as any).messages.fetch(target.missionsMessageId).catch(() => null);
             if (msg) {
-                await msg.edit({ content: "📅 Daily chiuso — la lista è stata azzerata a mezzanotte." });
+                await msg.edit({ content: "📅 Daily chiuso — la lista è stata azzerata a mezzanotte.", embeds: [] });
             }
         }
     }
@@ -810,7 +810,7 @@ export async function startBot(): Promise<void> {
 
         if (guildId) {
             const config = loadConfig();
-            const dailyConfigs = (config.dailyConfigs || []).filter((entry) => entry.guildId === guildId && entry.enabled);
+            const dailyConfigs = (config.dailyConfigs || []).filter((entry) => entry.guildId === guildId && entry.enabled && !entry.closed);
             for (const daily of dailyConfigs) {
                 const missionMessageId = daily.missionsMessageId;
                 const missionsChannelId = daily.missionsChannelId;

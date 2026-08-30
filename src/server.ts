@@ -301,7 +301,6 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     const guild = client.guilds.cache.get(guildId);
     const member = guild?.members.cache.get(participant?.userId ?? "");
     const serverName = member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
-    if (participant?.userId) return `<@${participant.userId}>`;
     return `@${serverName}`;
   }
 
@@ -353,11 +352,8 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
   }
 
   function buildDailyMissionEmbed(client: Client, guildId: string, config: Partial<GuildDailyConfig>): EmbedBuilder {
-    const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
-    const body = [
-      roleMentions ? `${roleMentions}\n` : "",
-      buildDailyMessageText(client, guildId, config),
-    ].join("\n");
+    // La menzione del ruolo va SOLO nel "content" del messaggio, non va ripetuta qui dentro.
+    const body = buildDailyMessageText(client, guildId, config);
 
     return new EmbedBuilder()
       .setColor(0x2ecc71)
@@ -386,6 +382,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       guildId,
       guildName,
       enabled: true,
+      closed: false,
       hostChannelId: effectiveHostChannelId,
       missionsChannelId: effectiveMissionChannelId,
       hostMentionRoleIds: resolveDailyHostMentions(current),
@@ -444,6 +441,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       guildName,
       missionsChannelId: effectiveMissionChannelId,
       participants: [],
+      closed: true,
       lastTriggeredDate: new Date().toISOString(),
     };
 
@@ -452,7 +450,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       if (channel && "messages" in channel) {
         const msg = await (channel as any).messages.fetch(next.missionsMessageId).catch(() => null);
         if (msg) {
-          await msg.edit({ content: "📅 Daily chiusa: la lista è stata azzerata dal test di controllo." });
+          await msg.edit({ content: "📅 Daily chiusa: la lista è stata azzerata dal test di controllo.", embeds: [] });
         }
       }
     } else if (effectiveMissionChannelId) {
