@@ -228,20 +228,25 @@ function resolveDailyMissionMentions(config: any): string[] {
     return [];
 }
 
-function buildDailyCopyText(config: any): string {
+function resolveDailyParticipantLabel(client: Client, guildId: string, participant: any): string {
+    const guild = client.guilds.cache.get(guildId);
+    const member = guild?.members.cache.get(participant?.userId ?? "");
+    const serverName = member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
+    if (participant?.userId) return `<@${participant.userId}>`;
+    return `@${serverName}`;
+}
+
+function buildDailyCopyText(client: Client, guildId: string, config: any): string {
     const participants = Array.isArray(config.participants) ? config.participants : [];
     if (!participants.length) return "Nessuna missione registrata ancora.";
     return participants
-        .map((p: any) => {
-            const name = p.userId ? `<@${p.userId}>` : p.displayName ? `@${p.displayName}` : p.username ? `@${p.username}` : "utente";
-            return `${name}: ${p.text}`;
-        })
+        .map((p: any) => `${resolveDailyParticipantLabel(client, guildId, p)}: ${p.text}`)
         .join("\n");
 }
 
-function buildDailyMessageText(config: any): string {
+function buildDailyMessageText(client: Client, guildId: string, config: any): string {
     const lines: string[] = ["📅 Daily missioni", "", config.missionsPrompt || "Rispondi a questo messaggio con la tua missione."];
-    const copyText = buildDailyCopyText(config);
+    const copyText = buildDailyCopyText(client, guildId, config);
     if (!Array.isArray(config.participants) || !config.participants.length) {
         lines.push("", copyText);
         return lines.join("\n");
@@ -268,7 +273,7 @@ function buildDailyMissionEmbed(client: Client, guildId: string, config: any): E
     const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
     const body = [
         roleMentions ? `${roleMentions}\n` : "",
-        buildDailyMessageText(config),
+        buildDailyMessageText(client, guildId, config),
     ].join("\n");
 
     return new EmbedBuilder()
@@ -314,8 +319,9 @@ async function triggerDailyForGuild(client: Client, guildId: string, config: any
     if (target.hostChannelId) {
         const hostChannel = await client.channels.fetch(target.hostChannelId).catch(() => null);
         if (hostChannel && "send" in hostChannel) {
+            const hostRoleMentions = resolveDailyHostMentions(target);
             const sent = await (hostChannel as any).send({
-                content: (target.mentionRoleIds ?? []).length ? buildDailyRoleMentions(client, guildId, target.mentionRoleIds) || "@everyone" : undefined,
+                content: hostRoleMentions.length ? buildDailyRoleMentions(client, guildId, hostRoleMentions) || "@everyone" : undefined,
                 embeds: [buildDailyHostEmbed(client, guildId, nextTarget)],
             }).catch(() => null);
             if (sent) nextTarget.hostMessageId = sent.id;
@@ -325,10 +331,10 @@ async function triggerDailyForGuild(client: Client, guildId: string, config: any
     if (target.missionsChannelId) {
         const missionsChannel = await client.channels.fetch(target.missionsChannelId).catch(() => null);
         if (missionsChannel && "send" in missionsChannel) {
-            const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(target));
+            const missionRoleMentions = resolveDailyMissionMentions(target);
             const sent = await (missionsChannel as any).send({
-                content: roleMentions || undefined,
-                allowedMentions: { roles: resolveDailyMissionMentions(target) },
+                content: missionRoleMentions.length ? buildDailyRoleMentions(client, guildId, missionRoleMentions) || undefined : undefined,
+                allowedMentions: { roles: missionRoleMentions },
                 embeds: [buildDailyMissionEmbed(client, guildId, { ...nextTarget, missionsPrompt: prompt, participants: [] })],
             }).catch(() => null);
             if (sent) nextTarget.missionsMessageId = sent.id;
@@ -803,10 +809,11 @@ export async function startBot(): Promise<void> {
 
                 const participants = Array.isArray(daily.participants) ? [...daily.participants] : [];
                 const existingIndex = participants.findIndex((p) => p.userId === message.author.id);
+                const participantName = message.member?.nickname || message.member?.displayName || message.author.username;
                 const nextEntry = {
                     userId: message.author.id,
-                    username: message.author.username,
-                    displayName: message.member?.displayName || message.author.username,
+                    username: participantName,
+                    displayName: participantName,
                     text,
                     addedAt: new Date().toISOString(),
                 };

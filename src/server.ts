@@ -16,6 +16,7 @@ import {
   type GuildProfileCardConfig,
   type GuildBirthdayConfig,
   type GuildDailyConfig,
+  type DailyParticipantEntry,
   type BirthdayEntry,
   type BotConfig,
   type AutoResponseConfig,
@@ -296,24 +297,29 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     return [];
   }
 
-  function buildDailyCopyText(config: Partial<GuildDailyConfig>): string {
+  function resolveDailyParticipantLabel(client: Client, guildId: string, participant: Partial<DailyParticipantEntry>): string {
+    const guild = client.guilds.cache.get(guildId);
+    const member = guild?.members.cache.get(participant?.userId ?? "");
+    const serverName = member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
+    if (participant?.userId) return `<@${participant.userId}>`;
+    return `@${serverName}`;
+  }
+
+  function buildDailyCopyText(client: Client, guildId: string, config: Partial<GuildDailyConfig>): string {
     const participants = Array.isArray(config.participants) ? config.participants : [];
     if (!participants.length) return "Nessuna missione registrata ancora.";
     return participants
-      .map((p) => {
-        const name = p.userId ? `<@${p.userId}>` : p.displayName ? `@${p.displayName}` : p.username ? `@${p.username}` : "utente";
-        return `${name}: ${p.text}`;
-      })
+      .map((p) => `${resolveDailyParticipantLabel(client, guildId, p)}: ${p.text}`)
       .join("\n");
   }
 
-  function buildDailyMessageText(config: Partial<GuildDailyConfig>): string {
+  function buildDailyMessageText(client: Client, guildId: string, config: Partial<GuildDailyConfig>): string {
     const lines: string[] = [
       "📅 Daily missioni",
       "",
       config.missionsPrompt || "Rispondi a questo messaggio con la tua missione.",
     ];
-    const copyText = buildDailyCopyText(config);
+    const copyText = buildDailyCopyText(client, guildId, config);
     if (!Array.isArray(config.participants) || !config.participants.length) {
       lines.push("", copyText);
       return lines.join("\n");
@@ -350,7 +356,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
     const body = [
       roleMentions ? `${roleMentions}\n` : "",
-      buildDailyMessageText(config),
+      buildDailyMessageText(client, guildId, config),
     ].join("\n");
 
     return new EmbedBuilder()
