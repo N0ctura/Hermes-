@@ -154,6 +154,115 @@ function formatDate(dateStr) {
         return "Sconosciuta";
     return new Date(dateStr).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
+function getRomeDateKey(date) {
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Rome",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(date);
+}
+function getRomeTimeParts(date) {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Rome",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).formatToParts(date);
+    const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+    const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+    return { hours: hour, minutes: minute };
+}
+function isAtRomeTime(date, time) {
+    const normalized = time?.trim() || "20:00";
+    const [hours, minutes] = normalized.split(":").map((value) => Number(value) || 0);
+    const { hours: nowHours, minutes: nowMinutes } = getRomeTimeParts(date);
+    return nowHours === hours && nowMinutes === minutes;
+}
+function buildDailyMessageText(config) {
+    const participants = Array.isArray(config.participants) ? config.participants : [];
+    const lines = ["📅 Daily missioni", "", config.missionsPrompt || "Rispondi a questo messaggio con la tua missione."];
+    if (!participants.length) {
+        lines.push("", "Nessuna missione registrata ancora.");
+        return lines.join("\n");
+    }
+    lines.push("");
+    for (const p of participants) {
+        const name = p.username ? `@${p.username}` : "<@" + p.userId + ">";
+        lines.push(`${name}: ${p.text}`);
+    }
+    return lines.join("\n");
+}
+async function updateDailyMissionMessage(client, guildId, config) {
+    if (!config?.missionsChannelId || !config?.missionsMessageId)
+        return;
+    const channel = await client.channels.fetch(config.missionsChannelId).catch(() => null);
+    if (!channel || !channel.isTextBased())
+        return;
+    const message = await channel.messages.fetch(config.missionsMessageId).catch(() => null);
+    if (!message)
+        return;
+    await message.edit({ content: buildDailyMessageText(config) });
+}
+async function triggerDailyForGuild(client, guildId, config) {
+    const cfg = loadConfig();
+    const dailyConfigs = Array.isArray(cfg.dailyConfigs) ? cfg.dailyConfigs : [];
+    const idx = dailyConfigs.findIndex((item) => item.guildId === guildId);
+    if (idx < 0)
+        return;
+    const target = dailyConfigs[idx];
+    const dateKey = getRomeDateKey(new Date());
+    const hostMessage = target.hostMessage || "📅 Daily pronto: organizza le lobby e preparatevi per le missioni.";
+    const prompt = target.missionsPrompt || "Rispondi a questo messaggio con la tua missione e il tuo nome.";
+    const nextTarget = {
+        ...target,
+        enabled: true,
+        lastTriggeredDate: dateKey,
+        participants: [],
+    };
+    if (target.hostChannelId) {
+        const hostChannel = await client.channels.fetch(target.hostChannelId).catch(() => null);
+        if (hostChannel && "send" in hostChannel) {
+            const sent = await hostChannel.send(hostMessage).catch(() => null);
+            if (sent)
+                nextTarget.hostMessageId = sent.id;
+        }
+    }
+    if (target.missionsChannelId) {
+        const missionsChannel = await client.channels.fetch(target.missionsChannelId).catch(() => null);
+        if (missionsChannel && "send" in missionsChannel) {
+            const sent = await missionsChannel.send({ content: buildDailyMessageText({ ...nextTarget, missionsPrompt: prompt, participants: [] }) }).catch(() => null);
+            if (sent)
+                nextTarget.missionsMessageId = sent.id;
+        }
+    }
+    dailyConfigs[idx] = nextTarget;
+    saveConfig({ ...cfg, dailyConfigs });
+}
+async function resetDailyForGuild(client, guildId, config) {
+    const cfg = loadConfig();
+    const dailyConfigs = Array.isArray(cfg.dailyConfigs) ? cfg.dailyConfigs : [];
+    const idx = dailyConfigs.findIndex((item) => item.guildId === guildId);
+    if (idx < 0)
+        return;
+    const target = dailyConfigs[idx];
+    const nextTarget = {
+        ...target,
+        participants: [],
+        lastTriggeredDate: getRomeDateKey(new Date()),
+    };
+    if (target.missionsChannelId && target.missionsMessageId) {
+        const channel = await client.channels.fetch(target.missionsChannelId).catch(() => null);
+        if (channel && "messages" in channel) {
+            const msg = await channel.messages.fetch(target.missionsMessageId).catch(() => null);
+            if (msg) {
+                await msg.edit({ content: "📅 Daily chiuso — la lista è stata azzerata a mezzanotte." });
+            }
+        }
+    }
+    dailyConfigs[idx] = nextTarget;
+    saveConfig({ ...cfg, dailyConfigs });
+}
 function redactSensitiveContent(content) {
     if (!content)
         return content;
@@ -337,6 +446,28 @@ export async function startBot() {
             schedulePollClose(client, config.activePoll.closesAt);
         }
     });
+    const dailyScheduler = async () => {
+        const config = loadConfig();
+        const dailyConfigs = config.dailyConfigs ?? [];
+        const now = new Date();
+        const todayKey = getRomeDateKey(now);
+        const isMidnight = getRomeTimeParts(now).hours === 0 && getRomeTimeParts(now).minutes === 0;
+        for (const daily of dailyConfigs) {
+            if (!daily.enabled)
+                continue;
+            const shouldStart = daily.dailyTime ? isAtRomeTime(now, daily.dailyTime) : false;
+            const shouldReset = isMidnight && daily.lastTriggeredDate !== todayKey && daily.dailyTime !== "00:00";
+            if (daily.lastTriggeredDate === todayKey && !shouldStart)
+                continue;
+            if (shouldStart) {
+                await triggerDailyForGuild(client, daily.guildId, daily);
+                continue;
+            }
+            if (shouldReset) {
+                await resetDailyForGuild(client, daily.guildId, daily);
+            }
+        }
+    };
     client.on("guildMemberAdd", async (member) => {
         if (member.partial) {
             try {
@@ -521,6 +652,37 @@ export async function startBot() {
         }
         if (guildId) {
             const config = loadConfig();
+            const dailyConfigs = (config.dailyConfigs || []).filter((entry) => entry.guildId === guildId && entry.enabled);
+            for (const daily of dailyConfigs) {
+                const missionMessageId = daily.missionsMessageId;
+                const missionsChannelId = daily.missionsChannelId;
+                if (!missionMessageId || !missionsChannelId || message.channel.id !== missionsChannelId)
+                    continue;
+                if (!message.reference || message.reference.messageId !== missionMessageId)
+                    continue;
+                if (message.author.bot)
+                    continue;
+                const text = message.content.trim();
+                if (!text)
+                    continue;
+                const participants = Array.isArray(daily.participants) ? [...daily.participants] : [];
+                const existingIndex = participants.findIndex((p) => p.userId === message.author.id);
+                const nextEntry = {
+                    userId: message.author.id,
+                    username: message.author.username,
+                    text,
+                    addedAt: new Date().toISOString(),
+                };
+                if (existingIndex >= 0)
+                    participants[existingIndex] = nextEntry;
+                else
+                    participants.push(nextEntry);
+                const nextDaily = { ...daily, participants };
+                const allConfigs = (config.dailyConfigs || []).map((item) => item.guildId === guildId ? nextDaily : item);
+                saveConfig({ ...config, dailyConfigs: allConfigs });
+                await updateDailyMissionMessage(client, guildId, nextDaily).catch(() => null);
+                break;
+            }
             const autoResponses = (config.autoResponses || []).filter(r => r.guildId === guildId && r.enabled);
             for (const response of autoResponses) {
                 let matched = false;

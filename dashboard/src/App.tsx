@@ -58,6 +58,7 @@ import type {
     JoinRequestEntry,
     GuildProfileCardConfig,
     GuildBirthdayConfig,
+    GuildDailyConfig,
     BirthdayEntry,
     DiscordMember,
     ScheduledMessage,
@@ -1210,7 +1211,7 @@ const FieldColor: React.FC<{ label: string; value: string; onChange: (c: string)
  * APP MAIN
  * =========================== */
 
-type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "autoResponses" | "tts" | "logs" | "activity" | "clan" | "joinRequests" | "profileCard" | "birthday";
+type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "daily" | "autoResponses" | "tts" | "logs" | "activity" | "clan" | "joinRequests" | "profileCard" | "birthday";
 
 const TABS: { key: TabKey; label: string; icon: any; asset: string }[] = [
     { key: "home", label: "Home", icon: LayoutDashboard, asset: "home-icon.png" },
@@ -1218,6 +1219,7 @@ const TABS: { key: TabKey; label: string; icon: any; asset: string }[] = [
     { key: "leave", label: "Leave", icon: UserMinus, asset: "icon-leave.png" },
     { key: "autorole", label: "Auto Role", icon: Shield, asset: "icon-avatar-shield.png" },
     { key: "messages", label: "Messaggi", icon: ListTodo, asset: "icon-announcements.png" },
+    { key: "daily", label: "Daily", icon: MessageSquare, asset: "icon-daily.png" },
     { key: "autoResponses", label: "Autorisposte", icon: MessageSquare, asset: "icon-autoresponse.png" },
     { key: "tts", label: "TTS", icon: Volume2, asset: "icon-tts.png" },
     { key: "logs", label: "Logs", icon: Activity, asset: "icon-divider.png" },
@@ -1242,6 +1244,7 @@ export default function App() {
     const [ttsConf, setTtsConf] = useState<GuildTTS | null>(null);
     const [logsConf, setLogsConf] = useState<GuildLogs | null>(null);
     const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
+    const [dailyConf, setDailyConf] = useState<GuildDailyConfig | null>(null);
     const [autoResponses, setAutoResponses] = useState<AutoResponse[]>([]);
     const [dmLogs, setDmLogs] = useState<DeletedModifiedLogEntry[]>([]);
     const [clanOverview, setClanOverview] = useState<ClanOverviewDto | null>(null);
@@ -1352,6 +1355,7 @@ export default function App() {
                 apiCall<GuildTTS>(`/api/module/tts/${selectedGuildId}`),
                 apiCall<GuildLogs>(`/api/module/logs/${selectedGuildId}`),
                 apiCall<ScheduledMessage[]>(`/api/scheduled-messages/${selectedGuildId}`),
+                apiCall<GuildDailyConfig>(`/api/module/daily/${selectedGuildId}`),
                 apiCall<AutoResponse[]>(`/api/auto-responses/${selectedGuildId}`),
                 apiCall<DeletedModifiedLogEntry[]>(`/api/logs/deleted-modified/${selectedGuildId}`),
                 apiCall<GuildJoinRequests>(`/api/module/join-requests/${selectedGuildId}`),
@@ -1360,13 +1364,14 @@ export default function App() {
                 apiCall<DiscordMember[]>(`/api/guilds/${selectedGuildId}/members`),
                 apiCall<GuildActivityDto>(`/api/guilds/${selectedGuildId}/activity`),
             ]);
-            const [chs, rls, wl, tts, lg, sch, ars, dml, jr, pc, bd, mbrs, act] = results;
+            const [chs, rls, wl, tts, lg, sch, daily, ars, dml, jr, pc, bd, mbrs, act] = results;
             if (chs.status === "fulfilled") setChannels(chs.value);
             if (rls.status === "fulfilled") setRoles(rls.value);
             if (wl.status === "fulfilled") setWlConf(wl.value);
             if (tts.status === "fulfilled") setTtsConf(tts.value);
             if (lg.status === "fulfilled") setLogsConf(lg.value);
             if (sch.status === "fulfilled") setScheduled(sch.value);
+            if (daily.status === "fulfilled") setDailyConf(daily.value);
             if (ars.status === "fulfilled") setAutoResponses(ars.value);
             if (dml.status === "fulfilled") setDmLogs(dml.value);
             if (jr.status === "fulfilled") setJoinReqConf(jr.value);
@@ -1608,6 +1613,26 @@ export default function App() {
         }
     };
 
+    const saveDaily = async (patch: Partial<GuildDailyConfig>) => {
+        if (!dailyConf) return;
+        const next = { ...dailyConf, ...patch };
+        setDailyConf(next);
+        setSaving(true);
+        try {
+            const saved = await apiCall<GuildDailyConfig>(`/api/module/daily/${selectedGuildId}`, {
+                method: "PUT",
+                body: JSON.stringify(next),
+            });
+            setDailyConf(saved);
+            showToast("ok", "Daily salvato");
+        } catch (e: any) {
+            setDailyConf(dailyConf);
+            showToast("err", e?.message || "Salvataggio fallito");
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const deleteScheduled = async (id: string) => {
         setSaving(true);
         try {
@@ -1806,6 +1831,13 @@ export default function App() {
                             list={scheduled}
                             onSave={saveScheduled}
                             onDelete={deleteScheduled}
+                        />
+                    )}
+                    {tab === "daily" && (
+                        <TabDaily
+                            channels={textChannels}
+                            conf={dailyConf}
+                            onSave={saveDaily}
                         />
                     )}
                     {tab === "autoResponses" && <TabAutoResponses list={autoResponses} onSave={saveAutoResponse} onDelete={deleteAutoResponse} />}
@@ -2284,6 +2316,81 @@ const TabAutorole: React.FC<{
                 </div>
                 <div className="mt-4 text-xs text-neutral-500">
                     {selected.size} ruolo/i selezionato/i. Verrà assegnato subito dopo l'evento <code className="mx-1 px-1.5 py-0.5 bg-black/40 rounded text-emerald-300">guildMemberAdd</code>.
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const TabDaily: React.FC<{
+    channels: DiscordChannel[];
+    conf: GuildDailyConfig | null;
+    onSave: (patch: Partial<GuildDailyConfig>) => void;
+}> = ({ channels, conf, onSave }) => {
+    if (!conf) return null;
+
+    return (
+        <div className="space-y-5 animate-fade-in">
+            <div className="flex items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-black tracking-tight">Daily</h1>
+                    <p className="text-sm text-neutral-400 mt-1">Avvia la daily con un messaggio host e raccogli le missioni tramite risposte nel canale dedicato.</p>
+                </div>
+                <label className="inline-flex items-center gap-2.5 px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 cursor-pointer">
+                    <Toggle value={!!conf.enabled} onChange={(v) => onSave({ enabled: v })} />
+                    <span className="text-sm font-semibold">{conf.enabled ? "Attiva" : "Disattivata"}</span>
+                </label>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+                    <Field label="Canale host">
+                        <select value={conf.hostChannelId ?? ""} onChange={(e) => onSave({ hostChannelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm">
+                            <option value="">— nessun canale —</option>
+                            {channels.map((channel) => (
+                                <option key={channel.id} value={channel.id}>#{channel.name}</option>
+                            ))}
+                        </select>
+                    </Field>
+
+                    <Field label="Ora di partenza (Italia)">
+                        <input type="time" value={conf.dailyTime ?? "20:00"} onChange={(e) => onSave({ dailyTime: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm" />
+                    </Field>
+
+                    <Field label="Messaggio host">
+                        <textarea rows={5} value={conf.hostMessage ?? ""} onChange={(e) => onSave({ hostMessage: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm resize-none" placeholder="Scrivi il messaggio che va nel canale host..." />
+                    </Field>
+                </div>
+
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+                    <Field label="Canale missioni">
+                        <select value={conf.missionsChannelId ?? ""} onChange={(e) => onSave({ missionsChannelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm">
+                            <option value="">— nessun canale —</option>
+                            {channels.map((channel) => (
+                                <option key={channel.id} value={channel.id}>#{channel.name}</option>
+                            ))}
+                        </select>
+                    </Field>
+
+                    <Field label="Prompt delle missioni">
+                        <textarea rows={5} value={conf.missionsPrompt ?? ""} onChange={(e) => onSave({ missionsPrompt: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm resize-none" placeholder="Es.: Rispondi a questo messaggio con la tua missione e il tuo nome..." />
+                    </Field>
+                </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-neutral-100 mb-3">Anteprima lista di oggi</h3>
+                <div className="space-y-2 min-h-[120px]">
+                    {(conf.participants ?? []).length === 0 ? (
+                        <div className="text-sm text-neutral-400 italic">Nessuna missione inviata ancora.</div>
+                    ) : (
+                        (conf.participants ?? []).map((entry) => (
+                            <div key={`${entry.userId}-${entry.addedAt}`} className="flex items-start gap-2 bg-neutral-950 border border-neutral-800 rounded-xl p-3">
+                                <span className="text-emerald-300 font-semibold">@{entry.username}</span>
+                                <span className="text-neutral-200">: {entry.text}</span>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
         </div>

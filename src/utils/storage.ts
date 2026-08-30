@@ -320,6 +320,28 @@ export interface GuildBirthdayConfig {
 export const DEFAULT_BIRTHDAY_MESSAGE_TEMPLATE =
   "🎂 Oggi festeggiamo {USERNAME}! Tanti auguri di buon compleanno da tutto {SERVER_NAME}! 🎉";
 
+export interface DailyParticipantEntry {
+  userId: string;
+  username: string;
+  text: string;
+  addedAt: string;
+}
+
+export interface GuildDailyConfig {
+  guildId: string;
+  guildName: string;
+  enabled?: boolean;
+  hostChannelId?: string;
+  hostMessage?: string;
+  missionsChannelId?: string;
+  missionsPrompt?: string;
+  dailyTime?: string;
+  lastTriggeredDate?: string;
+  hostMessageId?: string;
+  missionsMessageId?: string;
+  participants?: DailyParticipantEntry[];
+}
+
 export interface GuildProfileCardConfig {
   guildId: string;
   guildName: string;
@@ -406,6 +428,7 @@ export interface BotConfig {
   joinRequestTracking?: JoinRequestTrackingState;
   profileCardConfigs?: GuildProfileCardConfig[];
   birthdayConfigs?: GuildBirthdayConfig[];
+  dailyConfigs?: GuildDailyConfig[];
   /** Data (YYYY-MM-DD, fuso Europe/Rome) dell'ultimo controllo compleanni eseguito dallo scheduler. */
   birthdayLastCheckedDate?: string;
   activityHistory?: Record<string, GuildActivityDay[]>;
@@ -450,6 +473,7 @@ function normalizeConfig(config: Partial<BotConfig> | null | undefined): BotConf
     },
     profileCardConfigs: Array.isArray(config?.profileCardConfigs) ? config.profileCardConfigs : [],
     birthdayConfigs: Array.isArray(config?.birthdayConfigs) ? config.birthdayConfigs : [],
+    dailyConfigs: Array.isArray(config?.dailyConfigs) ? config.dailyConfigs : [],
     activityHistory: config?.activityHistory && typeof config.activityHistory === "object" ? config.activityHistory : {},
   };
 }

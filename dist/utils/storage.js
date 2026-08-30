@@ -102,6 +102,7 @@ function normalizeConfig(config) {
         },
         profileCardConfigs: Array.isArray(config?.profileCardConfigs) ? config.profileCardConfigs : [],
         birthdayConfigs: Array.isArray(config?.birthdayConfigs) ? config.birthdayConfigs : [],
+        dailyConfigs: Array.isArray(config?.dailyConfigs) ? config.dailyConfigs : [],
         activityHistory: config?.activityHistory && typeof config.activityHistory === "object" ? config.activityHistory : {},
     };
 }

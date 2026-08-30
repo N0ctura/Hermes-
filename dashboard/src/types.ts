@@ -96,6 +96,28 @@ export interface GuildBirthdayConfig {
   birthdays: BirthdayEntry[];
 }
 
+export interface DailyParticipantEntry {
+  userId: string;
+  username: string;
+  text: string;
+  addedAt: string;
+}
+
+export interface GuildDailyConfig {
+  guildId: string;
+  guildName: string;
+  enabled?: boolean;
+  hostChannelId?: string;
+  hostMessage?: string;
+  missionsChannelId?: string;
+  missionsPrompt?: string;
+  dailyTime?: string;
+  lastTriggeredDate?: string;
+  hostMessageId?: string;
+  missionsMessageId?: string;
+  participants?: DailyParticipantEntry[];
+}
+
 export interface DiscordMember {
   id: string;
   username: string;

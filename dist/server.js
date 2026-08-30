@@ -227,6 +227,20 @@ export async function startWebServer(discordClient) {
             return found;
         return { guildId, guildName };
     }
+    function ensureGuildDaily(arr, guildId, guildName) {
+        const found = arr?.find((c) => c.guildId === guildId);
+        if (found)
+            return found;
+        return {
+            guildId,
+            guildName,
+            enabled: false,
+            dailyTime: "20:00",
+            hostMessage: "📅 Daily pronto: organizzate le lobby e preparatevi per le missioni.",
+            missionsPrompt: "Rispondi a questo messaggio con la tua missione e il tuo nome, ad esempio: @Tuonome: farm 20 boss",
+            participants: [],
+        };
+    }
     async function getGuildName(id) {
         try {
             const g = discordClient.guilds.cache.get(id);
@@ -357,6 +371,35 @@ export async function startWebServer(discordClient) {
             c.profileCardConfigs = arr;
         });
         res.json(ensureGuildProfileCard(updated.profileCardConfigs, guildId, gn));
+    });
+    /* ===== Module: Daily ===== */
+    app.get("/api/module/daily/:guildId", async (req, res) => {
+        const cfg = loadConfig();
+        const gn = await getGuildName(req.params.guildId);
+        res.json(ensureGuildDaily(cfg.dailyConfigs, req.params.guildId, gn));
+    });
+    app.put("/api/module/daily/:guildId", async (req, res) => {
+        const guildId = req.params.guildId;
+        const gn = await getGuildName(guildId);
+        const incoming = (req.body || {});
+        const updated = patchConfig((c) => {
+            const arr = Array.isArray(c.dailyConfigs) ? [...c.dailyConfigs] : [];
+            const idx = arr.findIndex((x) => x.guildId === guildId);
+            const current = idx >= 0 ? arr[idx] : ensureGuildDaily(arr, guildId, gn);
+            const next = {
+                ...current,
+                guildId,
+                guildName: gn,
+                ...incoming,
+                participants: Array.isArray(incoming.participants) ? incoming.participants : current.participants ?? [],
+            };
+            if (idx >= 0)
+                arr[idx] = next;
+            else
+                arr.push(next);
+            c.dailyConfigs = arr;
+        });
+        res.json(ensureGuildDaily(updated.dailyConfigs, guildId, gn));
     });
     /* ===== Module: Birthday (lista + banner di mezzanotte) ===== */
     function ensureGuildBirthday(arr, guildId, guildName) {
