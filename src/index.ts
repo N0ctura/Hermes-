@@ -231,13 +231,25 @@ function resolveDailyMissionMentions(config: any): string[] {
 function resolveDailyParticipantLabel(client: Client, guildId: string, participant: any): string {
     const guild = client.guilds.cache.get(guildId);
     const member = guild?.members.cache.get(participant?.userId ?? "");
-    const serverName = member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
+    const displayName = member?.nickname || member?.displayName || participant?.displayName || participant?.username || "utente";
     if (participant?.userId) return `<@${participant.userId}>`;
-    return `@${serverName}`;
+    return `@${displayName}`;
+}
+
+function normalizeDailyParticipantEntry(client: Client, guildId: string, participant: any): any {
+    if (!participant || !participant.userId) return participant;
+    const guild = client.guilds.cache.get(guildId);
+    const member = guild?.members.cache.get(participant.userId);
+    const displayName = member?.nickname || member?.displayName || participant.displayName || participant.username || "utente";
+    return {
+        ...participant,
+        username: displayName,
+        displayName,
+    };
 }
 
 function buildDailyCopyText(client: Client, guildId: string, config: any): string {
-    const participants = Array.isArray(config.participants) ? config.participants : [];
+    const participants = Array.isArray(config.participants) ? config.participants.map((p: any) => normalizeDailyParticipantEntry(client, guildId, p)) : [];
     if (!participants.length) return "Nessuna missione registrata ancora.";
     return participants
         .map((p: any) => `${resolveDailyParticipantLabel(client, guildId, p)}: ${p.text}`)
@@ -818,8 +830,9 @@ export async function startBot(): Promise<void> {
                     addedAt: new Date().toISOString(),
                 };
 
-                if (existingIndex >= 0) participants[existingIndex] = nextEntry;
-                else participants.push(nextEntry);
+                const normalizedEntry = normalizeDailyParticipantEntry(client, guildId, nextEntry);
+                if (existingIndex >= 0) participants[existingIndex] = normalizedEntry;
+                else participants.push(normalizedEntry);
 
                 const nextDaily = { ...daily, participants };
                 const allConfigs = (config.dailyConfigs || []).map((item) => item.guildId === guildId ? nextDaily : item);
