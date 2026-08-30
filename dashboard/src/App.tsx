@@ -1868,8 +1868,11 @@ export default function App() {
                     {tab === "daily" && (
                         <TabDaily
                             channels={textChannels}
+                            roles={roles}
                             conf={dailyConf}
                             onSave={saveDaily}
+                            onRunTest={runDailyTest}
+                            onCloseTest={closeDailyTest}
                         />
                     )}
                     {tab === "autoResponses" && <TabAutoResponses list={autoResponses} onSave={saveAutoResponse} onDelete={deleteAutoResponse} />}
@@ -2364,6 +2367,8 @@ const TabDaily: React.FC<{
 }> = ({ channels, roles, conf, onSave, onRunTest, onCloseTest }) => {
     if (!conf) return null;
 
+    const safeRoles = Array.isArray(roles) ? roles : [];
+    const safeChannels = Array.isArray(channels) ? channels : [];
     const selectedRoles = new Set(conf.mentionRoleIds ?? []);
     const toggleRole = (roleId: string) => {
         const next = new Set(selectedRoles);
@@ -2413,7 +2418,7 @@ const TabDaily: React.FC<{
                 <h3 className="text-sm font-bold text-neutral-100 mb-3">Ruoli da taggare nel messaggio host</h3>
                 <p className="text-xs text-neutral-400 mb-3">Puoi usare <code className="text-emerald-300">{"{ROLE}"}</code> oppure <code className="text-emerald-300">{"{ROLES}"}</code> nel messaggio host per inserire automaticamente queste menzioni.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[220px] overflow-auto pr-2">
-                    {roles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
+                    {safeRoles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
                         const isSelected = selectedRoles.has(r.id);
                         return (
                             <button
@@ -2438,7 +2443,7 @@ const TabDaily: React.FC<{
                     <Field label="Canale host">
                         <select value={conf.hostChannelId ?? ""} onChange={(e) => onSave({ hostChannelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm">
                             <option value="">— nessun canale —</option>
-                            {channels.map((channel) => (
+                            {safeChannels.map((channel) => (
                                 <option key={channel.id} value={channel.id}>#{channel.name}</option>
                             ))}
                         </select>
@@ -2457,7 +2462,7 @@ const TabDaily: React.FC<{
                     <Field label="Canale missioni">
                         <select value={conf.missionsChannelId ?? ""} onChange={(e) => onSave({ missionsChannelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm">
                             <option value="">— nessun canale —</option>
-                            {channels.map((channel) => (
+                            {safeChannels.map((channel) => (
                                 <option key={channel.id} value={channel.id}>#{channel.name}</option>
                             ))}
                         </select>
