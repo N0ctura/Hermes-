@@ -380,10 +380,7 @@ async function updatePollSummaryMessage(client: Client, poll: ActivePoll): Promi
 
 export async function startBot(): Promise<void> {
     const token = BOT_CONFIG.token;
-    if (!token) {
-        logger.warn("DISCORD_BOT_TOKEN non impostato — bot Discord non avviato (modalità risparmio energetico)");
-        return;
-    }
+    const isLocalDev = process.env["NODE_ENV"] === "development" || process.env["DASHBOARD_DISABLE_AUTH"] === "true";
 
     const client = new Client({
         intents: [
@@ -404,6 +401,15 @@ export async function startBot(): Promise<void> {
     };
     await initStorage();
     await ensureWebServer();
+
+    if (!token) {
+        if (isLocalDev) {
+            logger.warn("DISCORD_BOT_TOKEN non impostato — dashboard locale attiva, bot Discord disabilitato");
+            return;
+        }
+        logger.warn("DISCORD_BOT_TOKEN non impostato — bot Discord non avviato (modalità risparmio energetico)");
+        return;
+    }
 
     client.once("clientReady", async (c) => {
         logger.info({ tag: c.user.tag }, "Bot Discord connesso");

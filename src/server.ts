@@ -28,6 +28,7 @@ import { getGuildActivity } from "./utils/activity-tracker.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DASHBOARD_PASSWORD = process.env["DASHBOARD_PASSWORD"] || "";
+const DASHBOARD_AUTH_DISABLED = process.env["NODE_ENV"] === "development" || process.env["DASHBOARD_DISABLE_AUTH"] === "true";
 const DASHBOARD_PORT = Number(process.env["DASHBOARD_PORT"] || process.env["PORT"] || 3000);
 const DASHBOARD_TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 const startedAt = new Date();
@@ -43,7 +44,7 @@ function makeToken(): string {
 }
 
 function authMiddleware(req: AppRequest, res: Response, next: NextFunction) {
-  if (!DASHBOARD_PASSWORD) {
+  if (DASHBOARD_AUTH_DISABLED || !DASHBOARD_PASSWORD) {
     req.__hermesAuth = true;
     return next();
   }
@@ -73,12 +74,12 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
 
   /* ===== Auth ===== */
   app.get("/api/auth/meta", (_req, res) => {
-    res.json({ needPassword: Boolean(DASHBOARD_PASSWORD), port: DASHBOARD_PORT });
+    res.json({ needPassword: !DASHBOARD_AUTH_DISABLED && Boolean(DASHBOARD_PASSWORD), port: DASHBOARD_PORT });
   });
 
   app.post("/api/auth/login", (req, res) => {
     const { password } = (req.body || {}) as { password?: string };
-    if (!DASHBOARD_PASSWORD) {
+    if (DASHBOARD_AUTH_DISABLED || !DASHBOARD_PASSWORD) {
       return res.json({ ok: true, token: "" });
     }
     if (password !== DASHBOARD_PASSWORD) {
