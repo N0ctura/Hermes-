@@ -238,7 +238,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
   function ensureGuildTts(arr: undefined | GuildTTSConfig[], guildId: string, guildName: string): GuildTTSConfig {
     const found = arr?.find((c) => c.guildId === guildId);
     if (found) return found;
-    return { guildId, guildName, ttsEnabled: false, ttsLanguage: "it", ttsPrefixes: [] };
+    return { guildId, guildName, ttsEnabled: false, ttsLanguage: "it", ttsPrefixes: [], ttsBlockedVoiceChannelIds: [] };
   }
   function ensureGuildLogs(arr: undefined | GuildLogsConfig[], guildId: string, guildName: string): GuildLogsConfig {
     const found = arr?.find((c) => c.guildId === guildId);

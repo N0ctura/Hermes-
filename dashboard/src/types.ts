@@ -46,6 +46,7 @@ export interface GuildTTS {
   ttsAutoJoinEnabled?: boolean;
   ttsSourceChannelId?: string;
   ttsVoiceChannelId?: string;
+  ttsBlockedVoiceChannelIds?: string[];
   ttsLanguage?: string;
   ttsPrefixes?: string[];
 }

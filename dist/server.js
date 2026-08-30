@@ -209,7 +209,7 @@ export async function startWebServer(discordClient) {
         const found = arr?.find((c) => c.guildId === guildId);
         if (found)
             return found;
-        return { guildId, guildName, ttsEnabled: false, ttsLanguage: "it", ttsPrefixes: [] };
+        return { guildId, guildName, ttsEnabled: false, ttsLanguage: "it", ttsPrefixes: [], ttsBlockedVoiceChannelIds: [] };
     }
     function ensureGuildLogs(arr, guildId, guildName) {
         const found = arr?.find((c) => c.guildId === guildId);

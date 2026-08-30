@@ -137,6 +137,12 @@ async function textToMp3File(text: string, lang: string = "it"): Promise<string>
   });
 }
 
+function isBlockedVoiceChannel(guildId: string, voiceChannelId?: string | null): boolean {
+  if (!voiceChannelId) return false;
+  const config = getTTSConfig(guildId);
+  return (config.ttsBlockedVoiceChannelIds ?? []).includes(voiceChannelId);
+}
+
 export async function playTextInChannel(
   guildId: string,
   voiceChannelId: string,
@@ -146,6 +152,11 @@ export async function playTextInChannel(
 ): Promise<void> {
   if (!client) {
     logger.error({ guildId }, "TTS: client Discord non disponibile");
+    return;
+  }
+
+  if (isBlockedVoiceChannel(guildId, voiceChannelId)) {
+    logger.warn({ guildId, voiceChannelId }, "TTS: canale vocale bloccato, non entro");
     return;
   }
 
@@ -436,19 +447,24 @@ export async function handleMessageForTTS(message: {
 }): Promise<void> {
   const ttsConfig = getTTSConfig(message.guildId);
 
+  const userVoiceChannelId = message.member.voice.channelId;
+  if (isBlockedVoiceChannel(message.guildId, userVoiceChannelId)) {
+    return;
+  }
+
   let shouldSpeak = false;
   let textToSpeak = "";
   let announceUsername = false;
   let imageAnnouncement = false;
 
-  const userVoiceChannelId = message.member.voice.channelId;
   const botVoiceChannelId = message.member.guild.members.me?.voice.channelId ?? activeVoiceChannels.get(message.guildId);
 
   // Di default l'auto-join è attivo insieme al TTS generale, a meno che non sia
   // stato esplicitamente disattivato da dashboard/comando /entrata-automatica.
   const autoJoinEnabled = ttsConfig.ttsAutoJoinEnabled ?? true;
+  const blockedChannelIds = new Set(ttsConfig.ttsBlockedVoiceChannelIds ?? []);
 
-  if (!botVoiceChannelId && autoJoinEnabled && !ttsConfig.ttsSourceChannelId && userVoiceChannelId) {
+  if (!botVoiceChannelId && autoJoinEnabled && !ttsConfig.ttsSourceChannelId && userVoiceChannelId && !blockedChannelIds.has(userVoiceChannelId)) {
     try {
       await joinVoiceChannelManual(message.guildId, userVoiceChannelId, message.client);
       logger.info({ guildId: message.guildId, channelId: userVoiceChannelId }, "TTS: ingresso automatico in vocale dopo messaggio in chat");
@@ -460,7 +476,7 @@ export async function handleMessageForTTS(message: {
 
   // Il TTS è legato alla conversazione vocale: un utente in un altro canale non
   // deve poter attivare il bot, anche se scrive nella chat testuale configurata.
-  if (!userVoiceChannelId || !botVoiceChannelId || userVoiceChannelId !== botVoiceChannelId) return;
+  if (!userVoiceChannelId || !botVoiceChannelId || userVoiceChannelId !== botVoiceChannelId || blockedChannelIds.has(userVoiceChannelId)) return;
 
   // Priorità (una sola regola si applica per messaggio, la prima che matcha):
   // 1) canale testuale fisso da dashboard -> legge sempre, ovunque sia in vocale l'utente
@@ -628,6 +644,7 @@ export function getTTSConfig(guildId: string): GuildTTSConfig {
     guildName: config?.guildName || "Unknown",
     ttsSourceChannelId: config?.ttsSourceChannelId,
     ttsVoiceChannelId: config?.ttsVoiceChannelId,
+    ttsBlockedVoiceChannelIds: config?.ttsBlockedVoiceChannelIds ?? [],
     ttsEnabled: config?.ttsEnabled ?? false,
     ttsAutoJoinEnabled: config?.ttsAutoJoinEnabled ?? true,
     ttsLanguage: config?.ttsLanguage || "it",

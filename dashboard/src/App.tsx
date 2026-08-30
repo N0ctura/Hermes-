@@ -2805,6 +2805,35 @@ const TabTTS: React.FC<{
                             ))}
                         </select>
                     </Field>
+                    <Field label="Canali vocali dove non entra">
+                        <div className="max-h-52 overflow-auto space-y-1.5 rounded-lg border border-neutral-800 bg-neutral-950 p-2">
+                            {voiceChannels.length === 0 ? (
+                                <p className="text-xs text-neutral-500 px-1 py-2">Nessun canale vocale disponibile.</p>
+                            ) : voiceChannels.map((channel) => {
+                                const blocked = (conf.ttsBlockedVoiceChannelIds ?? []).includes(channel.id);
+                                return (
+                                    <label key={channel.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-neutral-800 cursor-pointer text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={blocked}
+                                            onChange={() => {
+                                                const current = new Set(conf.ttsBlockedVoiceChannelIds ?? []);
+                                                if (blocked) current.delete(channel.id);
+                                                else current.add(channel.id);
+                                                onChange({ ttsBlockedVoiceChannelIds: Array.from(current) });
+                                            }}
+                                            className="accent-[#C9A227]"
+                                        />
+                                        <span className="text-neutral-400">🔊</span>
+                                        <span className="truncate">{channel.name}</span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                        <p className="text-[11px] text-neutral-500 mt-1.5">
+                            Seleziona i canali in cui Hermes non deve entrare in automatico o via TTS.
+                        </p>
+                    </Field>
                     <Field label="Lingua (codice es. it, en, es, fr, de)">
                         <input
                             value={conf.ttsLanguage ?? "it"}

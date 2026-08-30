@@ -147,6 +147,7 @@ export interface GuildTTSConfig {
   guildName: string;
   ttsSourceChannelId?: string;
   ttsVoiceChannelId?: string;
+  ttsBlockedVoiceChannelIds?: string[];
   ttsEnabled?: boolean;
   ttsAutoJoinEnabled?: boolean;
   ttsLanguage?: string;
