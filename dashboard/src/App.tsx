@@ -1365,8 +1365,8 @@ export default function App() {
                 apiCall<GuildActivityDto>(`/api/guilds/${selectedGuildId}/activity`),
             ]);
             const [chs, rls, wl, tts, lg, sch, daily, ars, dml, jr, pc, bd, mbrs, act] = results;
-            if (chs.status === "fulfilled") setChannels(chs.value);
-            if (rls.status === "fulfilled") setRoles(rls.value);
+            if (chs.status === "fulfilled") setChannels(Array.isArray(chs.value) ? chs.value : []);
+            if (rls.status === "fulfilled") setRoles(Array.isArray(rls.value) ? rls.value : []);
             if (wl.status === "fulfilled") setWlConf(wl.value);
             if (tts.status === "fulfilled") setTtsConf(tts.value);
             if (lg.status === "fulfilled") setLogsConf(lg.value);
@@ -2298,6 +2298,7 @@ const TabAutorole: React.FC<{
     roles: DiscordRole[];
     onChange: (patch: Partial<GuildWelcomeLeave>) => Promise<void>;
 }> = ({ conf, roles, onChange }) => {
+    const safeRoles = Array.isArray(roles) ? roles : [];
     const selected = new Set(conf.autoroleRoleIds ?? []);
     const toggle = (id: string) => {
         const next = new Set(selected);
@@ -2322,7 +2323,7 @@ const TabAutorole: React.FC<{
                     <Tag className="w-4 h-4 text-indigo-400" /> Seleziona ruoli da assegnare
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[540px] overflow-auto pr-2">
-                    {roles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
+                    {safeRoles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
                         const isSel = selected.has(r.id);
                         return (
                             <button
@@ -3018,6 +3019,7 @@ const TabJoinRequests: React.FC<{
     onChange: (patch: Partial<GuildJoinRequests>) => Promise<void>;
     onRefresh: () => Promise<void>;
 }> = ({ conf, channels, roles, history, loading, onChange, onRefresh }) => {
+    const safeRoles = Array.isArray(roles) ? roles : [];
     const selectedRoles = new Set(conf.mentionRoleIds ?? []);
     const toggleRole = (id: string) => {
         const next = new Set(selectedRoles);
@@ -3028,7 +3030,7 @@ const TabJoinRequests: React.FC<{
 
     const template = conf.messageTemplate ?? DEFAULT_JOIN_REQUEST_TEMPLATE;
     const previewRoles = Array.from(selectedRoles)
-        .map((id) => roles.find((r) => r.id === id)?.name)
+        .map((id) => safeRoles.find((r) => r.id === id)?.name)
         .filter(Boolean)
         .map((n) => `@${n}`)
         .join(" ") || "@Co Capo";
@@ -3087,7 +3089,7 @@ const TabJoinRequests: React.FC<{
                         <Tag className="w-4 h-4 text-indigo-400" /> Ruoli da menzionare (es. Co-Capo)
                     </h3>
                     <div className="grid grid-cols-1 gap-2 max-h-[280px] overflow-auto pr-2">
-                        {roles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
+                        {safeRoles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
                             const isSel = selectedRoles.has(r.id);
                             return (
                                 <button
@@ -3249,6 +3251,7 @@ const TabBirthday: React.FC<{
     const [pickMonth, setPickMonth] = useState<number>(1);
     const [search, setSearch] = useState("");
 
+    const safeRoles = Array.isArray(roles) ? roles : [];
     const selectedRoles = new Set(conf.mentionRoleIds ?? []);
     const toggleRole = (id: string) => {
         const next = new Set(selectedRoles);
@@ -3415,7 +3418,7 @@ const TabBirthday: React.FC<{
                     notizia del compleanno arriva a tutti (es. ruolo "Membri").
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[280px] overflow-auto pr-2">
-                    {roles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
+                    {safeRoles.filter((r) => r.name !== "@everyone").sort((a, b) => b.position - a.position).map((r) => {
                         const isSel = selectedRoles.has(r.id);
                         return (
                             <button
