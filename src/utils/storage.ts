@@ -323,6 +323,7 @@ export const DEFAULT_BIRTHDAY_MESSAGE_TEMPLATE =
 export interface DailyParticipantEntry {
   userId: string;
   username: string;
+  displayName?: string;
   text: string;
   addedAt: string;
 }

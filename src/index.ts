@@ -233,7 +233,7 @@ function buildDailyCopyText(config: any): string {
     if (!participants.length) return "Nessuna missione registrata ancora.";
     return participants
         .map((p: any) => {
-            const name = p.userId ? `<@${p.userId}>` : p.username ? `@${p.username}` : "utente";
+            const name = p.userId ? `<@${p.userId}>` : p.displayName ? `@${p.displayName}` : p.username ? `@${p.username}` : "utente";
             return `${name}: ${p.text}`;
         })
         .join("\n");
@@ -286,9 +286,8 @@ async function updateDailyMissionMessage(client: Client, guildId: string, config
     const message = await channel.messages.fetch(config.missionsMessageId).catch(() => null);
     if (!message) return;
     const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(config));
-    const copyText = buildDailyCopyText(config);
     await message.edit({
-        content: roleMentions ? `${roleMentions}\n${copyText}` : copyText,
+        content: roleMentions || undefined,
         allowedMentions: { roles: resolveDailyMissionMentions(config) },
         embeds: [buildDailyMissionEmbed(client, guildId, config)],
     });
@@ -327,9 +326,8 @@ async function triggerDailyForGuild(client: Client, guildId: string, config: any
         const missionsChannel = await client.channels.fetch(target.missionsChannelId).catch(() => null);
         if (missionsChannel && "send" in missionsChannel) {
             const roleMentions = buildDailyRoleMentions(client, guildId, resolveDailyMissionMentions(target));
-            const content = roleMentions ? `${roleMentions}\n${buildDailyCopyText({ ...nextTarget, missionsPrompt: prompt, participants: [] })}` : buildDailyCopyText({ ...nextTarget, missionsPrompt: prompt, participants: [] });
             const sent = await (missionsChannel as any).send({
-                content,
+                content: roleMentions || undefined,
                 allowedMentions: { roles: resolveDailyMissionMentions(target) },
                 embeds: [buildDailyMissionEmbed(client, guildId, { ...nextTarget, missionsPrompt: prompt, participants: [] })],
             }).catch(() => null);
@@ -808,6 +806,7 @@ export async function startBot(): Promise<void> {
                 const nextEntry = {
                     userId: message.author.id,
                     username: message.author.username,
+                    displayName: message.member?.displayName || message.author.username,
                     text,
                     addedAt: new Date().toISOString(),
                 };

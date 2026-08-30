@@ -99,6 +99,7 @@ export interface GuildBirthdayConfig {
 export interface DailyParticipantEntry {
   userId: string;
   username: string;
+  displayName?: string;
   text: string;
   addedAt: string;
 }

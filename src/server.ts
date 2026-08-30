@@ -301,7 +301,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     if (!participants.length) return "Nessuna missione registrata ancora.";
     return participants
       .map((p) => {
-        const name = p.userId ? `<@${p.userId}>` : p.username ? `@${p.username}` : "utente";
+        const name = p.userId ? `<@${p.userId}>` : p.displayName ? `@${p.displayName}` : p.username ? `@${p.username}` : "utente";
         return `${name}: ${p.text}`;
       })
       .join("\n");
@@ -403,9 +403,8 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
       const channel = await discordClient.channels.fetch(effectiveMissionChannelId).catch(() => null);
       if (channel && "send" in channel) {
         const roleMentions = buildDailyRoleMentions(discordClient, guildId, resolveDailyMissionMentions(next));
-        const copyText = buildDailyCopyText(next);
         const sent = await (channel as any).send({
-          content: roleMentions ? `${roleMentions}\n${copyText}` : copyText,
+          content: roleMentions || undefined,
           allowedMentions: { roles: resolveDailyMissionMentions(next) },
           embeds: [buildDailyMissionEmbed(discordClient, guildId, next)],
         }).catch(() => null);
