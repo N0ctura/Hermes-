@@ -241,6 +241,88 @@ export async function startWebServer(discordClient) {
             participants: [],
         };
     }
+    function buildDailyMessageText(config) {
+        const participants = Array.isArray(config.participants) ? config.participants : [];
+        const lines = [
+            "📅 Daily missioni",
+            "",
+            config.missionsPrompt || "Rispondi a questo messaggio con la tua missione.",
+        ];
+        if (!participants.length) {
+            lines.push("", "Nessuna missione registrata ancora.");
+            return lines.join("\n");
+        }
+        lines.push("");
+        for (const p of participants) {
+            const name = p.username ? `@${p.username}` : `<@${p.userId}>`;
+            lines.push(`${name}: ${p.text}`);
+        }
+        return lines.join("\n");
+    }
+    async function triggerDailyTestForGuild(guildId) {
+        const cfg = loadConfig();
+        const all = Array.isArray(cfg.dailyConfigs) ? [...cfg.dailyConfigs] : [];
+        const idx = all.findIndex((item) => item.guildId === guildId);
+        const guildName = await getGuildName(guildId);
+        const current = idx >= 0 ? all[idx] : ensureGuildDaily(all, guildId, guildName);
+        const next = {
+            ...current,
+            guildId,
+            guildName,
+            enabled: true,
+            lastTriggeredDate: new Date().toISOString(),
+            participants: [],
+        };
+        if (next.hostChannelId) {
+            const hostChannel = await discordClient.channels.fetch(next.hostChannelId).catch(() => null);
+            if (hostChannel && "send" in hostChannel) {
+                const sent = await hostChannel.send(next.hostMessage || "📅 Daily test avviato.").catch(() => null);
+                if (sent)
+                    next.hostMessageId = sent.id;
+            }
+        }
+        if (next.missionsChannelId) {
+            const channel = await discordClient.channels.fetch(next.missionsChannelId).catch(() => null);
+            if (channel && "send" in channel) {
+                const sent = await channel.send({
+                    content: buildDailyMessageText({ ...next, participants: [] }),
+                }).catch(() => null);
+                if (sent)
+                    next.missionsMessageId = sent.id;
+            }
+        }
+        if (idx >= 0)
+            all[idx] = next;
+        else
+            all.push(next);
+        saveConfig({ ...cfg, dailyConfigs: all });
+        return ensureGuildDaily(all, guildId, guildName);
+    }
+    async function closeDailyTestForGuild(guildId) {
+        const cfg = loadConfig();
+        const all = Array.isArray(cfg.dailyConfigs) ? [...cfg.dailyConfigs] : [];
+        const idx = all.findIndex((item) => item.guildId === guildId);
+        if (idx < 0)
+            return ensureGuildDaily(all, guildId, await getGuildName(guildId));
+        const current = all[idx];
+        const next = {
+            ...current,
+            participants: [],
+            lastTriggeredDate: new Date().toISOString(),
+        };
+        if (next.missionsChannelId && next.missionsMessageId) {
+            const channel = await discordClient.channels.fetch(next.missionsChannelId).catch(() => null);
+            if (channel && "messages" in channel) {
+                const msg = await channel.messages.fetch(next.missionsMessageId).catch(() => null);
+                if (msg) {
+                    await msg.edit({ content: "📅 Daily chiusa: la lista è stata azzerata dal test di controllo." });
+                }
+            }
+        }
+        all[idx] = next;
+        saveConfig({ ...cfg, dailyConfigs: all });
+        return ensureGuildDaily(all, guildId, current.guildName || await getGuildName(guildId));
+    }
     async function getGuildName(id) {
         try {
             const g = discordClient.guilds.cache.get(id);
@@ -400,6 +482,28 @@ export async function startWebServer(discordClient) {
             c.dailyConfigs = arr;
         });
         res.json(ensureGuildDaily(updated.dailyConfigs, guildId, gn));
+    });
+    app.post("/api/module/daily/:guildId/test", async (req, res) => {
+        try {
+            const guildId = req.params.guildId;
+            const updated = await triggerDailyTestForGuild(guildId);
+            res.json(updated);
+        }
+        catch (err) {
+            logger.error({ err }, "Errore avvio test daily");
+            res.status(500).json({ error: "Errore avvio test daily" });
+        }
+    });
+    app.post("/api/module/daily/:guildId/close", async (req, res) => {
+        try {
+            const guildId = req.params.guildId;
+            const updated = await closeDailyTestForGuild(guildId);
+            res.json(updated);
+        }
+        catch (err) {
+            logger.error({ err }, "Errore chiusura test daily");
+            res.status(500).json({ error: "Errore chiusura test daily" });
+        }
     });
     /* ===== Module: Birthday (lista + banner di mezzanotte) ===== */
     function ensureGuildBirthday(arr, guildId, guildName) {

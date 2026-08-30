@@ -345,6 +345,22 @@ export async function startBot() {
             const config = loadConfig();
             const now = new Date();
             let updated = false;
+            for (const daily of config.dailyConfigs || []) {
+                if (!daily.enabled)
+                    continue;
+                const dateKey = getRomeDateKey(now);
+                const shouldStart = daily.dailyTime ? isAtRomeTime(now, daily.dailyTime) : false;
+                const shouldReset = getRomeTimeParts(now).hours === 0 && getRomeTimeParts(now).minutes === 0 && daily.lastTriggeredDate !== dateKey && daily.dailyTime !== "00:00";
+                if (shouldStart && daily.lastTriggeredDate !== dateKey) {
+                    await triggerDailyForGuild(client, daily.guildId, daily);
+                    updated = true;
+                    continue;
+                }
+                if (shouldReset) {
+                    await resetDailyForGuild(client, daily.guildId, daily);
+                    updated = true;
+                }
+            }
             for (const msg of config.scheduledMessages || []) {
                 if (!msg.enabled)
                     continue;
@@ -468,6 +484,10 @@ export async function startBot() {
             }
         }
     };
+    void dailyScheduler();
+    setInterval(() => {
+        void dailyScheduler();
+    }, 60_000);
     client.on("guildMemberAdd", async (member) => {
         if (member.partial) {
             try {

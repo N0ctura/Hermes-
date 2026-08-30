@@ -354,13 +354,23 @@ export async function handleMessageForTTS(message) {
     let imageAnnouncement = false;
     const userVoiceChannelId = message.member.voice.channelId;
     const botVoiceChannelId = message.member.guild.members.me?.voice.channelId ?? activeVoiceChannels.get(message.guildId);
+    // Di default l'auto-join è attivo insieme al TTS generale, a meno che non sia
+    // stato esplicitamente disattivato da dashboard/comando /entrata-automatica.
+    const autoJoinEnabled = ttsConfig.ttsAutoJoinEnabled ?? true;
+    if (!botVoiceChannelId && autoJoinEnabled && !ttsConfig.ttsSourceChannelId && userVoiceChannelId) {
+        try {
+            await joinVoiceChannelManual(message.guildId, userVoiceChannelId, message.client);
+            logger.info({ guildId: message.guildId, channelId: userVoiceChannelId }, "TTS: ingresso automatico in vocale dopo messaggio in chat");
+        }
+        catch (err) {
+            logger.error({ guildId: message.guildId, channelId: userVoiceChannelId, err }, "TTS: ingresso automatico dopo messaggio fallito");
+            return;
+        }
+    }
     // Il TTS è legato alla conversazione vocale: un utente in un altro canale non
     // deve poter attivare il bot, anche se scrive nella chat testuale configurata.
     if (!userVoiceChannelId || !botVoiceChannelId || userVoiceChannelId !== botVoiceChannelId)
         return;
-    // Di default l'auto-join è attivo insieme al TTS generale, a meno che non sia
-    // stato esplicitamente disattivato da dashboard/comando /entrata-automatica.
-    const autoJoinEnabled = ttsConfig.ttsAutoJoinEnabled ?? true;
     // Priorità (una sola regola si applica per messaggio, la prima che matcha):
     // 1) canale testuale fisso da dashboard -> legge sempre, ovunque sia in vocale l'utente
     // 2) auto-join: chat testuale del canale vocale in cui l'utente si trova ora
@@ -453,31 +463,10 @@ export async function handleVoiceStateUpdate(oldState, newState) {
         }
         return;
     }
-    const joinedChannelId = newState.channelId;
-    const hasJoinedChannel = joinedChannelId && oldState.channelId !== joinedChannelId;
-    if (hasJoinedChannel && !newState.member?.user.bot) {
-        const ttsConfig = getTTSConfig(guildId);
-        const configuredChannelId = ttsConfig.ttsVoiceChannelId;
-        const activeChannelId = activeVoiceChannels.get(guildId);
-        const shouldAutoJoin = ttsConfig.ttsEnabled &&
-            ttsConfig.ttsAutoJoinEnabled !== false &&
-            (!configuredChannelId || configuredChannelId === joinedChannelId) &&
-            !activeChannelId &&
-            !autoJoinInProgress.has(guildId);
-        if (shouldAutoJoin) {
-            autoJoinInProgress.add(guildId);
-            try {
-                await joinVoiceChannelManual(guildId, joinedChannelId, newState.client);
-                logger.info({ guildId, channelId: joinedChannelId }, "TTS: ingresso automatico nel canale vocale");
-            }
-            catch (err) {
-                logger.error({ guildId, channelId: joinedChannelId, err }, "TTS: ingresso automatico fallito");
-            }
-            finally {
-                autoJoinInProgress.delete(guildId);
-            }
-        }
-    }
+    // Non facciamo più auto-join al semplice ingresso in voce: il bot deve entrare
+    // solo quando qualcuno scrive in chat mentre è già dentro quel canale vocale.
+    // Questa regola è gestita in handleMessageForTTS per evitare il comportamento
+    // accidentale osservato in produzione.
     // Un utente (non il bot) ha lasciato o cambiato canale vocale: se il bot era
     // connesso proprio al canale che ha appena lasciato, e non è rimasto più
     // nessun utente reale (non-bot), il bot esce da solo invece di restare a

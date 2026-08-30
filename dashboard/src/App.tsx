@@ -1633,6 +1633,38 @@ export default function App() {
         }
     };
 
+    const runDailyTest = async () => {
+        if (!selectedGuildId) return;
+        setSaving(true);
+        try {
+            const saved = await apiCall<GuildDailyConfig>(`/api/module/daily/${selectedGuildId}/test`, {
+                method: "POST",
+            });
+            setDailyConf(saved);
+            showToast("ok", "Test Daily avviato");
+        } catch (e: any) {
+            showToast("err", e?.message || "Errore avvio test Daily");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const closeDailyTest = async () => {
+        if (!selectedGuildId) return;
+        setSaving(true);
+        try {
+            const saved = await apiCall<GuildDailyConfig>(`/api/module/daily/${selectedGuildId}/close`, {
+                method: "POST",
+            });
+            setDailyConf(saved);
+            showToast("ok", "Daily di test chiusa");
+        } catch (e: any) {
+            showToast("err", e?.message || "Errore chiusura test Daily");
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const deleteScheduled = async (id: string) => {
         setSaving(true);
         try {
@@ -2326,7 +2358,9 @@ const TabDaily: React.FC<{
     channels: DiscordChannel[];
     conf: GuildDailyConfig | null;
     onSave: (patch: Partial<GuildDailyConfig>) => void;
-}> = ({ channels, conf, onSave }) => {
+    onRunTest: () => void;
+    onCloseTest: () => void;
+}> = ({ channels, conf, onSave, onRunTest, onCloseTest }) => {
     if (!conf) return null;
 
     return (
@@ -2340,6 +2374,31 @@ const TabDaily: React.FC<{
                     <Toggle value={!!conf.enabled} onChange={(v) => onSave({ enabled: v })} />
                     <span className="text-sm font-semibold">{conf.enabled ? "Attiva" : "Disattivata"}</span>
                 </label>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <h3 className="text-base font-bold text-neutral-100">Test rapido</h3>
+                        <p className="text-xs text-neutral-400">Invia il messaggio host e il messaggio live delle missioni, poi chiudi il test quando vuoi.</p>
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                    <button
+                        type="button"
+                        onClick={onRunTest}
+                        className="px-4 py-2 rounded-xl bg-[#C9A227] hover:bg-[#8A6B1D] text-[#1a1410] font-semibold text-sm shadow-[0_8px_24px_-10px_#C9A227]"
+                    >
+                        ▶ Avvia test
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onCloseTest}
+                        className="px-4 py-2 rounded-xl bg-neutral-800 border border-neutral-700 hover:bg-neutral-700 text-neutral-100 font-semibold text-sm"
+                    >
+                        🧹 Chiudi messaggio live
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
