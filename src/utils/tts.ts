@@ -59,6 +59,12 @@ function removeEmojis(str: string): string {
 }
 
 /**
+ * /**
+ * Ripulisce il testo prima di mandarlo al TTS da markup di Discord che, letto
+ * alla lettera, produce solo rumore: le emoji personalizzate del server
+ * (<:nome:1234567890123456789>) e le menzioni (<@id>, <@&id>, <#id>) contengono
+ * un ID numerico lunghissimo che Google TTS legge cifra per cifra ("miliardi,
+ * mi
  * Ripulisce il testo prima di mandarlo al TTS da markup di Discord che, letto
  * alla lettera, produce solo rumore: le emoji personalizzate del server
  * (<:nome:1234567890123456789>) e le menzioni (<@id>, <@&id>, <#id>) contengono
