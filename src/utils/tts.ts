@@ -79,6 +79,9 @@ function sanitizeTextForTTS(str: string): string {
     .replace(/<@!?\d+>/g, "")
     .replace(/<@&\d+>/g, "")
     .replace(/<#\d+>/g, "")
+    // Gli URL letti carattere per carattere sono incomprensibili: annunciamo
+    // solo la presenza del link e conserviamo il resto del messaggio.
+    .replace(/https?:\/\/[^\s<>]+|www\.[^\s<>]+/gi, "link")
     .replace(/\s{2,}/g, " ")
     .trim();
 }

@@ -12,6 +12,7 @@ const defaultTempleAssets = {
     eclissi: "/assets/tempio-eclissi.png",
     folgori: "/assets/tempio-folgori.png",
 };
+const defaultTempleGeneralMessage = "🎉 {USER} è entrato nel {TEMPLE}!";
 function getConfig(guildId) {
     return loadConfig().templeOnboardingConfigs?.find((c) => c.guildId === guildId);
 }
@@ -36,7 +37,7 @@ export function defaultTempleOnboardingConfig(guildId, guildName) {
             coLeaderRoleIds: [],
             welcomeMessage: "🏛️ Benvenuto/a {USER} nel {TEMPLE}!",
             templeMessage: "Benvenuto/a {USER}! Ora fai ufficialmente parte del {TEMPLE}.",
-            generalMessage: "🎉 {USER} è entrato nel {TEMPLE}!",
+            generalMessage: defaultTempleGeneralMessage,
             routineEnabled: false,
             routineMessage: "",
         })),
@@ -253,7 +254,9 @@ export async function handleTempleApproval(interaction, approve) {
     const templeName = TEMPLE_DEFINITIONS.find((d) => d.key === request.templeKey)?.displayName ?? request.templeKey;
     const tc = templeMessageConfig(config, request.templeKey);
     // Il messaggio generale può essere personalizzato indipendentemente per ogni Tempio.
-    const generalMessage = tc?.generalMessage || config.approvedGeneralMessage;
+    const generalMessage = tc?.generalMessage && tc.generalMessage !== defaultTempleGeneralMessage
+        ? tc.generalMessage
+        : config.approvedGeneralMessage;
     if (config.sendGeneralMessage && config.generalChannelId) {
         await sendToChannel(guild, generalMessage, await guild.channels.fetch(config.generalChannelId).catch(() => null), target, templeName);
     }
