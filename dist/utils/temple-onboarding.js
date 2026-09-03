@@ -1,8 +1,7 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder, } from "discord.js";
 import crypto from "node:crypto";
-import { fetchClanMembers } from "./wolvesville.js";
-import { loadConfig, saveConfig, DEFAULT_THRESHOLD_TIERS } from "./storage.js";
-import { TEMPLE_DEFINITIONS, countEffectiveTempleMembers, templeIndexForKey } from "./temples.js";
+import { loadConfig, saveConfig } from "./storage.js";
+import { TEMPLE_DEFINITIONS, countEffectiveTempleMembers } from "./temples.js";
 import { logger } from "./logger.js";
 export const TEMPLE_SELECT_PREFIX = "temple-onboarding:select:";
 export const TEMPLE_APPROVE_PREFIX = "temple-onboarding:approve:";
@@ -100,36 +99,6 @@ export async function sendTempleSelection(member) {
         ?? "🏛️ Scegli il tuo Tempio.";
     await channel.send({ content: text, components: [buildSelectionComponents(member.guild, config)] }).catch((err) => logger.error({ err, guildId: member.guild.id }, "Temple onboarding: invio selezione fallito"));
 }
-async function fetchXpForMember(member, config) {
-    if (!config.fetchXpFromWolvesville)
-        return null;
-    const clanId = loadConfig().clanId;
-    if (!clanId)
-        return null;
-    try {
-        const members = await fetchClanMembers(clanId);
-        const names = new Set([member.user.username.toLowerCase(), member.displayName.toLowerCase(), (member.nickname ?? "").toLowerCase()].filter(Boolean));
-        const match = members.find((m) => names.has(m.username.toLowerCase()));
-        return typeof match?.xp === "number" ? match.xp : null;
-    }
-    catch (err) {
-        logger.warn({ err, guildId: member.guild.id, userId: member.id }, "Temple onboarding: impossibile recuperare XP Wolvesville");
-        return null;
-    }
-}
-function highestThresholdRoleId(guild, xp, templeKey) {
-    if (xp == null)
-        return null;
-    const tier = DEFAULT_THRESHOLD_TIERS.find((t) => xp >= t.xpRequired);
-    if (!tier)
-        return null;
-    const idx = templeIndexForKey(templeKey);
-    const candidateIndexes = tier.roleIds.length >= 8 && idx >= 0
-        ? [idx * 2, idx * 2 + 1]
-        : idx >= 0 ? [idx] : [];
-    const id = candidateIndexes.map((i) => tier.roleIds[i]).find((roleId) => roleId && guild.roles.cache.has(roleId));
-    return id ?? null;
-}
 async function removeOtherTempleRoles(member, config, selectedKey) {
     const roleIds = config.temples.map((t) => t.roleId).filter((id) => Boolean(id));
     const toRemove = roleIds.filter((id) => id !== config.temples.find((t) => t.key === selectedKey)?.roleId && member.roles.cache.has(id));
@@ -209,13 +178,16 @@ export async function handleTempleApproval(interaction, approve) {
         return;
     }
     const target = await guild.members.fetch(request.userId).catch(() => null);
-    request.status = approve ? "approved" : "denied";
-    request.resolvedAt = new Date().toISOString();
-    request.resolvedBy = interaction.user.id;
-    persistConfig(config);
-    if (!approve || !target) {
-        await interaction.message.edit({ components: [] }).catch(() => null);
-        await interaction.update({ content: approve ? "⚠️ Utente non più presente nel server." : "❌ Richiesta negata.", embeds: interaction.message.embeds, components: [] });
+    if (!approve) {
+        request.status = "denied";
+        request.resolvedAt = new Date().toISOString();
+        request.resolvedBy = interaction.user.id;
+        persistConfig(config);
+        await interaction.update({ content: "❌ **Richiesta negata.**", embeds: interaction.message.embeds, components: [] });
+        return;
+    }
+    if (!target) {
+        await interaction.update({ content: "⚠️ L'utente non è più presente nel server.", embeds: interaction.message.embeds, components: [] });
         return;
     }
     const currentSelectable = getSelectableTemples(guild, config);
@@ -229,24 +201,70 @@ export async function handleTempleApproval(interaction, approve) {
     }
     const temple = config.temples.find((t) => t.key === request.templeKey);
     if (!temple) {
-        await interaction.update({ content: "❌ Configurazione del Tempio non trovata.", components: [] });
+        await interaction.reply({ content: "❌ Configurazione del Tempio non trovata.", ephemeral: true });
         return;
     }
-    await removeOtherTempleRoles(target, config, request.templeKey);
-    if (config.assignTempleRole && temple.roleId && !target.roles.cache.has(temple.roleId))
-        await target.roles.add(temple.roleId, "Temple onboarding: tempio autorizzato").catch((err) => logger.warn({ err }, "Temple onboarding: ruolo tempio non assegnato"));
-    const xp = await fetchXpForMember(target, config);
-    const xpRoleId = config.assignXpRole ? highestThresholdRoleId(guild, xp, request.templeKey) : null;
-    if (xpRoleId && !target.roles.cache.has(xpRoleId))
-        await target.roles.add(xpRoleId, "Temple onboarding: soglia XP Wolvesville").catch((err) => logger.warn({ err }, "Temple onboarding: ruolo XP non assegnato"));
+    // Discord non permette al bot di assegnare ruoli uguali o superiori al proprio ruolo.
+    // Recuperiamo il ruolo direttamente dalla cache/API e controlliamo la gerarchia prima
+    // di chiudere la richiesta come approvata.
+    if (config.assignTempleRole !== false) {
+        if (!temple.roleId) {
+            await interaction.reply({ content: "❌ Il ruolo di questo Tempio non è configurato nella dashboard.", ephemeral: true });
+            return;
+        }
+        const templeRole = await guild.roles.fetch(temple.roleId).catch(() => null);
+        if (!templeRole) {
+            await interaction.reply({ content: "❌ Il ruolo configurato per questo Tempio non esiste più nel server.", ephemeral: true });
+            return;
+        }
+        const me = guild.members.me ?? await guild.members.fetchMe().catch(() => null);
+        if (!me) {
+            await interaction.reply({ content: "❌ Non riesco a verificare i permessi del bot.", ephemeral: true });
+            return;
+        }
+        if (templeRole.managed) {
+            await interaction.reply({ content: "❌ Il ruolo del Tempio è gestito da un'integrazione e non può essere assegnato da Hermes.", ephemeral: true });
+            return;
+        }
+        if (templeRole.position >= me.roles.highest.position) {
+            await interaction.reply({
+                content: `❌ Hermes non può assegnare **${templeRole.name}** perché il suo ruolo è allo stesso livello o sotto il ruolo del Tempio. Sposta il ruolo di Hermes sopra quello del Tempio nella gerarchia Discord.`,
+                ephemeral: true,
+            });
+            return;
+        }
+        try {
+            await removeOtherTempleRoles(target, config, request.templeKey);
+            if (!target.roles.cache.has(templeRole.id)) {
+                await target.roles.add(templeRole, "Temple onboarding: tempio autorizzato");
+            }
+        }
+        catch (err) {
+            logger.error({ err, guildId: guild.id, userId: target.id, templeKey: request.templeKey, roleId: templeRole.id }, "Temple onboarding: impossibile assegnare il ruolo del Tempio");
+            await interaction.reply({ content: `❌ Non sono riuscito ad assegnare **${templeRole.name}** a ${target}. Controlla la gerarchia dei ruoli e il permesso **Gestisci Ruoli** di Hermes.`, ephemeral: true });
+            return;
+        }
+    }
+    // La richiesta diventa APPROVED solo dopo che il ruolo del Tempio è stato assegnato.
+    request.status = "approved";
+    request.resolvedAt = new Date().toISOString();
+    request.resolvedBy = interaction.user.id;
+    persistConfig(config);
     const templeName = TEMPLE_DEFINITIONS.find((d) => d.key === request.templeKey)?.displayName ?? request.templeKey;
     const tc = templeMessageConfig(config, request.templeKey);
-    if (config.sendGeneralMessage && config.generalChannelId)
-        await sendToChannel(guild, config.approvedGeneralMessage, await guild.channels.fetch(config.generalChannelId).catch(() => null), target, templeName);
-    if (config.sendTempleMessage && temple?.channelId)
+    // Il messaggio generale può essere personalizzato indipendentemente per ogni Tempio.
+    const generalMessage = tc?.generalMessage || config.approvedGeneralMessage;
+    if (config.sendGeneralMessage && config.generalChannelId) {
+        await sendToChannel(guild, generalMessage, await guild.channels.fetch(config.generalChannelId).catch(() => null), target, templeName);
+    }
+    if (config.sendTempleMessage && temple?.channelId) {
         await sendToChannel(guild, tc?.templeMessage || config.approvedTempleMessage, await guild.channels.fetch(temple.channelId).catch(() => null), target, templeName);
-    const xpText = xp == null ? "" : `\n⭐ XP rilevati: **${xp.toLocaleString("it-IT")}**${xpRoleId ? ` → <@&${xpRoleId}>` : ""}`;
-    await interaction.update({ content: `✅ **Richiesta autorizzata** da ${interaction.user}.${xpText}`, embeds: interaction.message.embeds, components: [] });
+    }
+    await interaction.update({
+        content: `✅ **Richiesta autorizzata** da ${interaction.user}.\n🏛️ Ruolo del Tempio assegnato a ${target}.`,
+        embeds: interaction.message.embeds,
+        components: [],
+    });
 }
 function templeMessageConfig(config, key) { return config.temples.find((t) => t.key === key); }
 async function sendToChannel(_guild, template, channel, member, templeName) {
