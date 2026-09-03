@@ -116,6 +116,7 @@ function normalizeConfig(config) {
         leaderRoleNames: Array.isArray(config?.leaderRoleNames) ? config.leaderRoleNames : [],
         thresholdRoleNames: Array.isArray(config?.thresholdRoleNames) ? config.thresholdRoleNames : [],
         welcomeLeaveConfigs: Array.isArray(config?.welcomeLeaveConfigs) ? config.welcomeLeaveConfigs : [],
+        templeOnboardingConfigs: Array.isArray(config?.templeOnboardingConfigs) ? config.templeOnboardingConfigs : [],
         autoResponses: Array.isArray(config?.autoResponses) ? config.autoResponses : [],
         scheduledMessages: Array.isArray(config?.scheduledMessages) ? config.scheduledMessages : [],
         ttsConfigs: Array.isArray(config?.ttsConfigs) ? config.ttsConfigs : [],

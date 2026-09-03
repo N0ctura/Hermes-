@@ -9,6 +9,7 @@ import { logger } from "./utils/logger.js";
 import { refreshBirthdayListMessage } from "./utils/birthday-list.js";
 import { fetchClanById, fetchClanMembers, fetchClanLog, fetchClanLedger } from "./utils/wolvesville.js";
 import { getGuildActivity } from "./utils/activity-tracker.js";
+import { defaultTempleOnboardingConfig, getTemplePopulationSnapshot } from "./utils/temple-onboarding.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_PASSWORD = process.env["DASHBOARD_PASSWORD"] || "";
 const DASHBOARD_AUTH_DISABLED = process.env["NODE_ENV"] === "development" || process.env["DASHBOARD_DISABLE_AUTH"] === "true";
@@ -454,6 +455,33 @@ export async function startWebServer(discordClient) {
             c.welcomeLeaveConfigs = arr;
         });
         res.json(ensureGuild(updated.welcomeLeaveConfigs, guildId, gn));
+    });
+    /* ===== Module: Temple Onboarding ===== */
+    app.get("/api/module/temple-onboarding/:guildId", async (req, res) => {
+        const guildId = req.params.guildId;
+        const gn = await getGuildName(guildId);
+        const cfg = loadConfig();
+        const current = cfg.templeOnboardingConfigs?.find((c) => c.guildId === guildId) ?? defaultTempleOnboardingConfig(guildId, gn);
+        const guild = discordClient.guilds.cache.get(guildId);
+        const population = guild ? getTemplePopulationSnapshot(guild, current) : [];
+        res.json({ ...current, population });
+    });
+    app.put("/api/module/temple-onboarding/:guildId", async (req, res) => {
+        const guildId = req.params.guildId;
+        const gn = await getGuildName(guildId);
+        const incoming = (req.body || {});
+        const cfg = loadConfig();
+        const all = [...(cfg.templeOnboardingConfigs ?? [])];
+        const idx = all.findIndex((c) => c.guildId === guildId);
+        const current = idx >= 0 ? all[idx] : defaultTempleOnboardingConfig(guildId, gn);
+        const next = { ...current, ...incoming, guildId, guildName: gn, temples: Array.isArray(incoming.temples) ? incoming.temples : current.temples };
+        if (idx >= 0)
+            all[idx] = next;
+        else
+            all.push(next);
+        saveConfig({ ...cfg, templeOnboardingConfigs: all });
+        const guild = discordClient.guilds.cache.get(guildId);
+        res.json({ ...next, population: guild ? getTemplePopulationSnapshot(guild, next) : [] });
     });
     /* ===== Module: TTS ===== */
     app.get("/api/module/tts/:guildId", async (req, res) => {

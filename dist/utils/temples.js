@@ -173,4 +173,22 @@ export function resolveNotifyChannelsByTemple(guild) {
     });
     return result;
 }
+/** Conteggio dei membri effettivi del tempio: esclude i co-capi configurati. */
+export function countEffectiveTempleMembers(guild, templeRoleId, coLeaderRoleIds = []) {
+    if (!templeRoleId)
+        return 0;
+    const role = guild.roles.cache.get(templeRoleId);
+    if (!role)
+        return 0;
+    const excluded = new Set(coLeaderRoleIds.filter(Boolean));
+    let count = 0;
+    for (const member of role.members.values()) {
+        if (member.user.bot)
+            continue;
+        if (member.roles.cache.some((r) => excluded.has(r.id)))
+            continue;
+        count++;
+    }
+    return count;
+}
 //# sourceMappingURL=temples.js.map

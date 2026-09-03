@@ -56,6 +56,7 @@ import { startDonationTracker } from "./utils/donation-tracker.js";
 import { startJoinRequestTracker } from "./utils/join-request-tracker.js";
 import { startBirthdayScheduler } from "./utils/birthday-tracker.js";
 import { trackMessageActivity, trackVoiceState } from "./utils/activity-tracker.js";
+import { handleTempleApproval, handleTempleSelection } from "./utils/temple-onboarding.js";
 const commands = new Collection();
 commands.set(sondaggioCommand.data.name, sondaggioCommand);
 commands.set(impostazioniCommand.data.name, impostazioniCommand);
@@ -591,6 +592,7 @@ export async function startBot() {
         }
         try {
             await handleMemberJoin(member);
+            await import("./utils/temple-onboarding.js").then(({ sendTempleSelection }) => sendTempleSelection(member));
         }
         catch (err) {
             logger.error({ err }, "Error in guildMemberAdd");
@@ -627,6 +629,18 @@ export async function startBot() {
         trackVoiceState({ guildId: newState.guild.id, userId: newState.id, channelId: newState.channelId });
     });
     client.on("interactionCreate", async (interaction) => {
+        if (interaction.isStringSelectMenu() && interaction.customId.startsWith("temple-onboarding:select:")) {
+            safeExecute(async () => { await handleTempleSelection(interaction); }, `temple-selection:${interaction.customId}`);
+            return;
+        }
+        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:approve:")) {
+            safeExecute(async () => { await handleTempleApproval(interaction, true); }, `temple-approve:${interaction.customId}`);
+            return;
+        }
+        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:deny:")) {
+            safeExecute(async () => { await handleTempleApproval(interaction, false); }, `temple-deny:${interaction.customId}`);
+            return;
+        }
         if (interaction.isStringSelectMenu() && interaction.customId === "vote_mission") {
             const value = interaction.values[0] ?? "";
             const config = loadConfig();

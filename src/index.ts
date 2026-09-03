@@ -73,6 +73,7 @@ import { startDonationTracker } from "./utils/donation-tracker.js";
 import { startJoinRequestTracker } from "./utils/join-request-tracker.js";
 import { startBirthdayScheduler } from "./utils/birthday-tracker.js";
 import { trackMessageActivity, trackVoiceState } from "./utils/activity-tracker.js";
+import { handleTempleApproval, handleTempleSelection } from "./utils/temple-onboarding.js";
 
 type BotCommand =
     | typeof sondaggioCommand
@@ -635,6 +636,7 @@ export async function startBot(): Promise<void> {
         }
         try {
             await handleMemberJoin(member as GuildMember);
+            await import("./utils/temple-onboarding.js").then(({ sendTempleSelection }) => sendTempleSelection(member as GuildMember));
         } catch (err) {
             logger.error({ err }, "Error in guildMemberAdd");
         }
@@ -669,6 +671,19 @@ export async function startBot(): Promise<void> {
     });
 
     client.on("interactionCreate", async (interaction: Interaction) => {
+        if (interaction.isStringSelectMenu() && interaction.customId.startsWith("temple-onboarding:select:")) {
+            safeExecute(async () => { await handleTempleSelection(interaction); }, `temple-selection:${interaction.customId}`);
+            return;
+        }
+
+        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:approve:")) {
+            safeExecute(async () => { await handleTempleApproval(interaction as ButtonInteraction, true); }, `temple-approve:${interaction.customId}`);
+            return;
+        }
+        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:deny:")) {
+            safeExecute(async () => { await handleTempleApproval(interaction as ButtonInteraction, false); }, `temple-deny:${interaction.customId}`);
+            return;
+        }
         if (interaction.isStringSelectMenu() && interaction.customId === "vote_mission") {
             const value = interaction.values[0] ?? "";
             const config = loadConfig();

@@ -142,6 +142,56 @@ export interface GuildWelcomeLeaveConfig {
   autoroleRoleIds?: string[];
 }
 
+
+export interface TempleOnboardingTempleConfig {
+  key: string;
+  roleId?: string;
+  channelId?: string;
+  coLeaderRoleIds?: string[];
+  assetUrl?: string;
+  enabled?: boolean;
+  welcomeMessage?: string;
+  templeMessage?: string;
+  generalMessage?: string;
+  routineEnabled?: boolean;
+  routineMessage?: string;
+}
+
+export interface TempleOnboardingRequest {
+  id: string;
+  guildId: string;
+  userId: string;
+  username: string;
+  templeKey: string;
+  status: "pending" | "approved" | "denied" | "expired";
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  approvalMessageId?: string;
+  approvalChannelId?: string;
+}
+
+export interface GuildTempleOnboardingConfig {
+  guildId: string;
+  guildName: string;
+  enabled?: boolean;
+  selectionChannelId?: string;
+  approvalChannelId?: string;
+  generalChannelId?: string;
+  approvalRoleIds?: string[];
+  selectionMessage?: string;
+  approvalMessage?: string;
+  approvedGeneralMessage?: string;
+  approvedTempleMessage?: string;
+  sendGeneralMessage?: boolean;
+  sendTempleMessage?: boolean;
+  assignTempleRole?: boolean;
+  assignXpRole?: boolean;
+  fetchXpFromWolvesville?: boolean;
+  temples: TempleOnboardingTempleConfig[];
+  requests?: TempleOnboardingRequest[];
+}
+
 export interface GuildTTSConfig {
   guildId: string;
   guildName: string;
@@ -421,6 +471,7 @@ export interface BotConfig {
   leaderRoleNames?: string[];
   thresholdRoleNames?: string[];
   welcomeLeaveConfigs?: GuildWelcomeLeaveConfig[];
+  templeOnboardingConfigs?: GuildTempleOnboardingConfig[];
   autoResponses?: AutoResponseConfig[];
   scheduledMessages?: ScheduledMessageConfig[];
   ttsConfigs?: GuildTTSConfig[];
@@ -495,6 +546,7 @@ function normalizeConfig(config: Partial<BotConfig> | null | undefined): BotConf
     leaderRoleNames: Array.isArray(config?.leaderRoleNames) ? config.leaderRoleNames : [],
     thresholdRoleNames: Array.isArray(config?.thresholdRoleNames) ? config.thresholdRoleNames : [],
     welcomeLeaveConfigs: Array.isArray(config?.welcomeLeaveConfigs) ? config.welcomeLeaveConfigs : [],
+    templeOnboardingConfigs: Array.isArray(config?.templeOnboardingConfigs) ? config.templeOnboardingConfigs : [],
     autoResponses: Array.isArray(config?.autoResponses) ? config.autoResponses : [],
     scheduledMessages: Array.isArray(config?.scheduledMessages) ? config.scheduledMessages : [],
     ttsConfigs: Array.isArray(config?.ttsConfigs) ? config.ttsConfigs : [],

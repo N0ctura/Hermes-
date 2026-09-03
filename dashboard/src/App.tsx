@@ -59,6 +59,7 @@ import type {
     GuildProfileCardConfig,
     GuildBirthdayConfig,
     GuildDailyConfig,
+    GuildTempleOnboarding,
     BirthdayEntry,
     DiscordMember,
     ScheduledMessage,
@@ -1211,10 +1212,11 @@ const FieldColor: React.FC<{ label: string; value: string; onChange: (c: string)
  * APP MAIN
  * =========================== */
 
-type TabKey = "home" | "welcome" | "leave" | "autorole" | "messages" | "daily" | "autoResponses" | "tts" | "logs" | "activity" | "clan" | "joinRequests" | "profileCard" | "birthday";
+type TabKey = "home" | "templeOnboarding" | "welcome" | "leave" | "autorole" | "messages" | "daily" | "autoResponses" | "tts" | "logs" | "activity" | "clan" | "joinRequests" | "profileCard" | "birthday";
 
 const TABS: { key: TabKey; label: string; icon: any; asset: string }[] = [
     { key: "home", label: "Home", icon: LayoutDashboard, asset: "home-icon.png" },
+    { key: "templeOnboarding", label: "Onboarding Templi", icon: Crown, asset: "icon-welcome.png" },
     { key: "welcome", label: "Welcome", icon: UserPlus, asset: "icon-welcome.png" },
     { key: "leave", label: "Leave", icon: UserMinus, asset: "icon-leave.png" },
     { key: "autorole", label: "Auto Role", icon: Shield, asset: "icon-avatar-shield.png" },
@@ -1241,6 +1243,7 @@ export default function App() {
     const [tab, setTab] = useState<TabKey>("home");
 
     const [wlConf, setWlConf] = useState<GuildWelcomeLeave | null>(null);
+    const [templeOnboardingConf, setTempleOnboardingConf] = useState<GuildTempleOnboarding | null>(null);
     const [ttsConf, setTtsConf] = useState<GuildTTS | null>(null);
     const [logsConf, setLogsConf] = useState<GuildLogs | null>(null);
     const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
@@ -1352,6 +1355,7 @@ export default function App() {
                 apiCall<DiscordChannel[]>(`/api/guilds/${selectedGuildId}/channels`),
                 apiCall<DiscordRole[]>(`/api/guilds/${selectedGuildId}/roles`),
                 apiCall<GuildWelcomeLeave>(`/api/module/welcome-leave/${selectedGuildId}`),
+                apiCall<GuildTempleOnboarding>(`/api/module/temple-onboarding/${selectedGuildId}`),
                 apiCall<GuildTTS>(`/api/module/tts/${selectedGuildId}`),
                 apiCall<GuildLogs>(`/api/module/logs/${selectedGuildId}`),
                 apiCall<ScheduledMessage[]>(`/api/scheduled-messages/${selectedGuildId}`),
@@ -1364,10 +1368,11 @@ export default function App() {
                 apiCall<DiscordMember[]>(`/api/guilds/${selectedGuildId}/members`),
                 apiCall<GuildActivityDto>(`/api/guilds/${selectedGuildId}/activity`),
             ]);
-            const [chs, rls, wl, tts, lg, sch, daily, ars, dml, jr, pc, bd, mbrs, act] = results;
+            const [chs, rls, wl, templeOnboarding, tts, lg, sch, daily, ars, dml, jr, pc, bd, mbrs, act] = results;
             if (chs.status === "fulfilled") setChannels(Array.isArray(chs.value) ? chs.value : []);
             if (rls.status === "fulfilled") setRoles(Array.isArray(rls.value) ? rls.value : []);
             if (wl.status === "fulfilled") setWlConf(wl.value);
+            if (templeOnboarding.status === "fulfilled") setTempleOnboardingConf(templeOnboarding.value);
             if (tts.status === "fulfilled") setTtsConf(tts.value);
             if (lg.status === "fulfilled") setLogsConf(lg.value);
             if (sch.status === "fulfilled") setScheduled(sch.value);
@@ -1503,6 +1508,21 @@ export default function App() {
         } finally {
             setSaving(false);
         }
+    };
+
+    const saveTempleOnboarding = async (patch: Partial<GuildTempleOnboarding>) => {
+        if (!templeOnboardingConf) return;
+        const next = { ...templeOnboardingConf, ...patch };
+        setTempleOnboardingConf(next);
+        setSaving(true);
+        try {
+            const saved = await apiCall<GuildTempleOnboarding>(`/api/module/temple-onboarding/${selectedGuildId}`, { method: "PUT", body: JSON.stringify(next) });
+            setTempleOnboardingConf(saved);
+            showToast("ok", "Onboarding Templi salvato");
+        } catch (e: any) {
+            setTempleOnboardingConf(templeOnboardingConf);
+            showToast("err", e?.message || "Salvataggio fallito");
+        } finally { setSaving(false); }
     };
 
     const saveJoinRequests = async (patch: Partial<GuildJoinRequests>) => {
@@ -1837,6 +1857,9 @@ export default function App() {
                 </header>
                 <div className="max-w-[1200px] mx-auto px-6 py-6">
                     {tab === "home" && <TabHome status={status} activity={activity} members={guildMembers} />}
+                    {tab === "templeOnboarding" && templeOnboardingConf && (
+                        <TabTempleOnboarding conf={templeOnboardingConf} channels={textChannels} roles={roles} onChange={saveTempleOnboarding} />
+                    )}
                     {tab === "welcome" && wlConf && (
                         <TabWelcomeLeave
                             kind="welcome"
@@ -2169,6 +2192,45 @@ const InfoCard: React.FC<{ title: string; icon: any; value: string; desc: string
         </div>
     </div>
 );
+
+const TabTempleOnboarding: React.FC<{
+    conf: GuildTempleOnboarding;
+    channels: DiscordChannel[];
+    roles: DiscordRole[];
+    onChange: (patch: Partial<GuildTempleOnboarding>) => Promise<void>;
+}> = ({ conf, channels, roles, onChange }) => {
+    const templeNames: Record<string, string> = { rinascita: "Tempio della Rinascita", abisso: "Tempio degli Abissi", eclissi: "Tempio dell'Eclissi", folgori: "Tempio delle Folgori" };
+    const updateTemple = (key: string, patch: any) => onChange({ temples: conf.temples.map((t) => t.key === key ? { ...t, ...patch } : t) });
+    const toggleRole = (key: string, roleId: string) => {
+        const t = conf.temples.find((x) => x.key === key); if (!t) return;
+        const set = new Set(t.coLeaderRoleIds ?? []); set.has(roleId) ? set.delete(roleId) : set.add(roleId);
+        updateTemple(key, { coLeaderRoleIds: [...set] });
+    };
+    const selectedApproval = new Set(conf.approvalRoleIds ?? []);
+    const toggleApprovalRole = (id: string) => { const n = new Set(selectedApproval); n.has(id) ? n.delete(id) : n.add(id); onChange({ approvalRoleIds: [...n] }); };
+    return <div className="space-y-5 animate-fade-in">
+        <div className="flex items-center justify-between gap-4"><div><h1 className="text-2xl font-black tracking-tight">Onboarding Templi</h1><p className="text-sm text-neutral-400 mt-1">Ingresso, equilibrio, approvazione dei co-capi e ruoli automatici.</p></div><label className="inline-flex items-center gap-2"><Toggle value={!!conf.enabled} onChange={(enabled) => onChange({ enabled })} /><span className="text-sm font-semibold">{conf.enabled ? "Attivo" : "Disattivato"}</span></label></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4"><h3 className="font-bold">Ingresso</h3>
+                <Field label="Canale scelta Tempio"><select value={conf.selectionChannelId ?? ""} onChange={e => onChange({ selectionChannelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm"><option value="">— seleziona —</option>{channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}</select></Field>
+                <Field label="Messaggio scelta"><textarea rows={4} value={conf.selectionMessage ?? ""} onChange={e => onChange({ selectionMessage: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm resize-none" /></Field>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4"><h3 className="font-bold">Approvazione</h3>
+                <Field label="Canale co-capi"><select value={conf.approvalChannelId ?? ""} onChange={e => onChange({ approvalChannelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm"><option value="">— seleziona —</option>{channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}</select></Field>
+                <Field label="Canale generale"><select value={conf.generalChannelId ?? ""} onChange={e => onChange({ generalChannelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm"><option value="">— seleziona —</option>{channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}</select></Field>
+                <Field label="Ruoli autorizzati globali"><div className="max-h-32 overflow-y-auto space-y-1">{roles.filter(r => !r.managed).map(r => <label key={r.id} className="flex items-center gap-2 text-xs p-1.5 rounded bg-neutral-950"><input type="checkbox" checked={selectedApproval.has(r.id)} onChange={() => toggleApprovalRole(r.id)} />{r.name}</label>)}</div></Field>
+            </div>
+        </div>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5"><h3 className="font-bold mb-4">Automazioni post-approvazione</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <label className="flex items-center gap-2"><Toggle value={!!conf.assignTempleRole} onChange={assignTempleRole => onChange({ assignTempleRole })} /> Assegna ruolo Tempio</label>
+            <label className="flex items-center gap-2"><Toggle value={!!conf.assignXpRole} onChange={assignXpRole => onChange({ assignXpRole })} /> Assegna ruolo soglia XP</label>
+            <label className="flex items-center gap-2"><Toggle value={!!conf.fetchXpFromWolvesville} onChange={fetchXpFromWolvesville => onChange({ fetchXpFromWolvesville })} /> Recupera XP da Wolvesville</label>
+            <label className="flex items-center gap-2"><Toggle value={!!conf.sendGeneralMessage} onChange={sendGeneralMessage => onChange({ sendGeneralMessage })} /> Messaggio generale</label>
+            <label className="flex items-center gap-2"><Toggle value={!!conf.sendTempleMessage} onChange={sendTempleMessage => onChange({ sendTempleMessage })} /> Messaggio nel Tempio</label>
+        </div><div className="grid md:grid-cols-2 gap-4 mt-4"><Field label="Messaggio generale"><textarea rows={3} value={conf.approvedGeneralMessage ?? ""} onChange={e => onChange({ approvedGeneralMessage: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm" /></Field><Field label="Messaggio Tempio predefinito"><textarea rows={3} value={conf.approvedTempleMessage ?? ""} onChange={e => onChange({ approvedTempleMessage: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm" /></Field></div></div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">{conf.temples.map(t => { const pop = conf.population?.find(p => p.key === t.key); return <div key={t.key} className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden"><div className="h-32 bg-neutral-950 flex items-center justify-between gap-4 p-4"><img src={t.assetUrl || `/assets/tempio-${t.key}.png`} className="h-full w-48 object-cover rounded-xl border border-neutral-800" /><div className="text-right"><h3 className="font-black">{templeNames[t.key] ?? t.key}</h3><div className="text-xs text-neutral-400 mt-1">{pop?.count ?? 0} membri effettivi</div><Toggle value={t.enabled !== false} onChange={enabled => updateTemple(t.key, { enabled })} /></div></div><div className="p-4 space-y-3"><Field label="Ruolo Tempio"><select value={t.roleId ?? ""} onChange={e => updateTemple(t.key, { roleId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm"><option value="">— seleziona ruolo —</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></Field><Field label="Canale Tempio"><select value={t.channelId ?? ""} onChange={e => updateTemple(t.key, { channelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm"><option value="">— seleziona canale —</option>{channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}</select></Field><Field label="Ruoli co-capi del Tempio"><div className="max-h-24 overflow-y-auto space-y-1">{roles.filter(r => !r.managed).map(r => <label key={r.id} className="flex items-center gap-2 text-xs p-1.5 rounded bg-neutral-950"><input type="checkbox" checked={(t.coLeaderRoleIds ?? []).includes(r.id)} onChange={() => toggleRole(t.key, r.id)} />{r.name}</label>)}</div></Field><Field label="Messaggio specifico Tempio"><textarea rows={3} value={t.templeMessage ?? ""} onChange={e => updateTemple(t.key, { templeMessage: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm resize-none" /></Field></div></div>; })}</div>
+    </div>;
+};
 
 const TabWelcomeLeave: React.FC<{
     kind: "welcome" | "leave";

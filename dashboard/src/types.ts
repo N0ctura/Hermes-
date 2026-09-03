@@ -341,3 +341,47 @@ export interface BotConfigDto {
   deletedModifiedLogs: DeletedModifiedLogEntry[];
   roseLobbyChannelId?: string;
 }
+
+export interface TempleOnboardingTemple {
+  key: string;
+  roleId?: string;
+  channelId?: string;
+  coLeaderRoleIds?: string[];
+  assetUrl?: string;
+  enabled?: boolean;
+  welcomeMessage?: string;
+  templeMessage?: string;
+  generalMessage?: string;
+  routineEnabled?: boolean;
+  routineMessage?: string;
+}
+
+export interface TemplePopulation {
+  key: string;
+  displayName: string;
+  count: number;
+  enabled: boolean;
+  roleId?: string;
+}
+
+export interface GuildTempleOnboarding {
+  guildId: string;
+  guildName: string;
+  enabled?: boolean;
+  selectionChannelId?: string;
+  approvalChannelId?: string;
+  generalChannelId?: string;
+  approvalRoleIds?: string[];
+  selectionMessage?: string;
+  approvalMessage?: string;
+  approvedGeneralMessage?: string;
+  approvedTempleMessage?: string;
+  sendGeneralMessage?: boolean;
+  sendTempleMessage?: boolean;
+  assignTempleRole?: boolean;
+  assignXpRole?: boolean;
+  fetchXpFromWolvesville?: boolean;
+  temples: TempleOnboardingTemple[];
+  requests?: any[];
+  population?: TemplePopulation[];
+}
