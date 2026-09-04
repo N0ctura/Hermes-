@@ -127,6 +127,24 @@ function buildTempleDetails(guild: Guild, config: GuildTempleOnboardingConfig, s
     .join("\n\n");
 }
 
+function buildSelectionMessage(
+  template: string,
+  member: GuildMember,
+  details: string,
+  min: number,
+): string {
+  const hasDetailsPlaceholder = /\{TEMPLE_DETAILS\}/i.test(template);
+  const replaced = replaceSelectionVariables(template, member, details, min);
+
+  // La descrizione dei Templi deve comparire anche se l'amministratore ha
+  // scritto un messaggio personalizzato senza inserire manualmente la variabile.
+  // Se invece {TEMPLE_DETAILS} è presente, rispettiamo esattamente la posizione
+  // scelta nella dashboard.
+  return hasDetailsPlaceholder
+    ? replaced
+    : `${replaced.trim()}\n\n${details}`;
+}
+
 function replaceSelectionVariables(template: string, member: GuildMember, details: string, min: number): string {
   return template
     .replace(/\{USER\}/gi, member.toString())
@@ -193,7 +211,7 @@ export async function handleTempleModuleOffer(interaction: ButtonInteraction, se
   }
   const details = buildTempleDetails(guild, config, new Set(selectable.map((x) => x.key)));
   const template = selectable.length === 1 ? (config.forcedSelectionMessage || defaultForcedSelectionMessage) : (config.selectionMessage || defaultSelectionMessage);
-  const text = replaceSelectionVariables(template, target, details, selectable[0]?.count ?? 0);
+  const text = buildSelectionMessage(template, target, details, selectable[0]?.count ?? 0);
   await (selectionChannel as TextChannel).send({ content: text, components: [buildSelectionComponents(guild, config, target.id)] }).catch((err) => logger.error({ err, guildId: guild.id, userId: target.id }, "Temple onboarding: invio modulo fallito"));
   await interaction.update({ content: `🏛️ Modulo per la scelta del Tempio inviato a ${target}.`, components: [], embeds: interaction.message.embeds });
 }
@@ -236,7 +254,7 @@ export async function handleTempleSelection(interaction: StringSelectMenuInterac
   if (!guild) return;
   const config = getConfig(guild.id);
   if (!config?.enabled) return;
-  const [, , expectedMemberId] = interaction.customId.split(":");
+  const [, , , expectedMemberId] = interaction.customId.split(":");
   if (interaction.user.id !== expectedMemberId) {
     await interaction.reply({ content: "⛔ Questo modulo è riservato al nuovo arrivato indicato nel messaggio.", ephemeral: true });
     return;
