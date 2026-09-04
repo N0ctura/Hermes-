@@ -286,9 +286,23 @@ export async function handleTempleSelection(interaction) {
     const config = getConfig(guild.id);
     if (!config?.enabled)
         return;
-    const [, , expectedMemberId] = interaction.customId.split(":");
+    const parts = interaction.customId.split(":");
+    const expectedMemberId = parts[3];
     if (interaction.user.id !== expectedMemberId) {
         await interaction.reply({ content: "⛔ Questo modulo è riservato al nuovo arrivato indicato nel messaggio.", ephemeral: true });
+        return;
+    }
+    // Un utente che possiede già un ruolo principale di Tempio non può
+    // riutilizzare una vecchia lista o cambiare Tempio.
+    const templeRoleIds = config.temples
+        .map((t) => t.roleId)
+        .filter((id) => Boolean(id));
+    const hasTempleRole = templeRoleIds.some((roleId) => interaction.member.roles.cache.has(roleId));
+    if (hasTempleRole) {
+        await interaction.reply({
+            content: "🔒 Hai già un ruolo di Tempio assegnato. Non puoi utilizzare nuovamente il modulo di scelta.",
+            ephemeral: true,
+        });
         return;
     }
     const key = interaction.values[0];
@@ -317,7 +331,25 @@ export async function handleTempleSelection(interaction) {
             persistConfig(config);
         }
     }
-    await interaction.reply({ content: `✅ Richiesta registrata per **${TEMPLE_DEFINITIONS.find((d) => d.key === key)?.displayName ?? key}**. Attendi l'autorizzazione dei co-capi.`, ephemeral: true });
+    // La scelta è stata effettuata: spegniamo il menu pubblico per impedire
+    // ulteriori clic o cambi di Tempio.
+    const disabledMenu = new StringSelectMenuBuilder()
+        .setCustomId(interaction.customId)
+        .setPlaceholder(`Scelta effettuata: ${TEMPLE_DEFINITIONS.find((d) => d.key === key)?.displayName ?? key}`)
+        .setDisabled(true)
+        .addOptions(selectable.map((t) => ({
+        label: t.displayName,
+        value: t.key,
+        description: `${t.count} membri effettivi`,
+        emoji: "🏛️",
+        default: t.key === key,
+    })));
+    const disabledRow = new ActionRowBuilder().addComponents(disabledMenu);
+    await interaction.update({ components: [disabledRow] });
+    await interaction.followUp({
+        content: `✅ Richiesta registrata per **${TEMPLE_DEFINITIONS.find((d) => d.key === key)?.displayName ?? key}**. Attendi l'autorizzazione dei co-capi.`,
+        ephemeral: true,
+    });
 }
 function canResolve(member, config, request) {
     const global = new Set(config.approvalRoleIds ?? []);
