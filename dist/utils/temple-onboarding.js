@@ -42,6 +42,14 @@ function isBlockedFromNewArrivals(member, config) {
         return false;
     return member.roles.cache.some((role) => blocked.has(role.id));
 }
+function isTempleManager(member, config) {
+    const global = new Set(config.approvalRoleIds ?? []);
+    return member.roles.cache.some((role) => {
+        if (global.has(role.id))
+            return true;
+        return config.temples.some((temple) => (temple.coLeaderRoleIds ?? []).includes(role.id));
+    });
+}
 const BLOCKED_INTERACTION_REPLY = "⛔ Il tuo ruolo non può interagire con la gestione dei nuovi arrivati.";
 export function defaultTempleOnboardingConfig(guildId, guildName) {
     return {
@@ -156,11 +164,11 @@ export async function handleTempleModuleOffer(interaction, send) {
     const prefix = send ? TEMPLE_OFFER_SEND_PREFIX : TEMPLE_OFFER_DENY_PREFIX;
     const memberId = interaction.customId.slice(prefix.length);
     const resolver = interaction.member;
-    if (isBlockedFromNewArrivals(resolver, config)) {
+    const authorized = isTempleManager(resolver, config);
+    if (isBlockedFromNewArrivals(resolver, config) && !authorized) {
         await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
         return;
     }
-    const authorized = (config.approvalRoleIds ?? []).some((id) => resolver.roles.cache.has(id));
     if (!authorized) {
         await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire l'onboarding dei Templi.", ephemeral: true });
         return;
@@ -303,11 +311,12 @@ export async function handleTempleApproval(interaction, approve) {
         return;
     }
     const resolver = interaction.member;
-    if (isBlockedFromNewArrivals(resolver, config)) {
+    const canHandleRequest = canResolve(resolver, config, request);
+    if (isBlockedFromNewArrivals(resolver, config) && !canHandleRequest) {
         await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
         return;
     }
-    if (!canResolve(resolver, config, request)) {
+    if (!canHandleRequest) {
         await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire questa richiesta.", ephemeral: true });
         return;
     }

@@ -59,6 +59,14 @@ function isBlockedFromNewArrivals(member: GuildMember, config: GuildTempleOnboar
   return member.roles.cache.some((role) => blocked.has(role.id));
 }
 
+function isTempleManager(member: GuildMember, config: GuildTempleOnboardingConfig): boolean {
+  const global = new Set(config.approvalRoleIds ?? []);
+  return member.roles.cache.some((role) => {
+    if (global.has(role.id)) return true;
+    return config.temples.some((temple) => (temple.coLeaderRoleIds ?? []).includes(role.id));
+  });
+}
+
 const BLOCKED_INTERACTION_REPLY = "⛔ Il tuo ruolo non può interagire con la gestione dei nuovi arrivati.";
 
 export function defaultTempleOnboardingConfig(guildId: string, guildName: string): GuildTempleOnboardingConfig {
@@ -179,11 +187,11 @@ export async function handleTempleModuleOffer(interaction: ButtonInteraction, se
   const prefix = send ? TEMPLE_OFFER_SEND_PREFIX : TEMPLE_OFFER_DENY_PREFIX;
   const memberId = interaction.customId.slice(prefix.length);
   const resolver = interaction.member as GuildMember;
-  if (isBlockedFromNewArrivals(resolver, config)) {
+  const authorized = isTempleManager(resolver, config);
+  if (isBlockedFromNewArrivals(resolver, config) && !authorized) {
     await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
     return;
   }
-  const authorized = (config.approvalRoleIds ?? []).some((id) => resolver.roles.cache.has(id));
   if (!authorized) {
     await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire l'onboarding dei Templi.", ephemeral: true });
     return;
@@ -315,11 +323,12 @@ export async function handleTempleApproval(interaction: ButtonInteraction, appro
   const request = (config.requests ?? []).find((r) => r.id === requestId);
   if (!request || request.status !== "pending") { await interaction.reply({ content: "❌ Questa richiesta non è più disponibile.", ephemeral: true }); return; }
   const resolver = interaction.member as GuildMember;
-  if (isBlockedFromNewArrivals(resolver, config)) {
+  const canHandleRequest = canResolve(resolver, config, request);
+  if (isBlockedFromNewArrivals(resolver, config) && !canHandleRequest) {
     await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
     return;
   }
-  if (!canResolve(resolver, config, request)) { await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire questa richiesta.", ephemeral: true }); return; }
+  if (!canHandleRequest) { await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire questa richiesta.", ephemeral: true }); return; }
   const target = await guild.members.fetch(request.userId).catch(() => null);
   if (!approve) {
     request.status = "denied"; request.resolvedAt = new Date().toISOString(); request.resolvedBy = interaction.user.id; persistConfig(config);
