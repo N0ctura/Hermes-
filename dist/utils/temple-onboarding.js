@@ -150,8 +150,7 @@ async function getFreshSelectableTemples(guild, config) {
     await refreshTempleMemberCache(guild);
     return getSelectableTemplesFromFreshSnapshot(guild, config);
 }
-function buildSelectionComponents(guild, config, memberId) {
-    const selectable = getSelectableTemples(guild, config);
+function buildSelectionComponents(guild, config, memberId, selectable = getSelectableTemples(guild, config)) {
     const menu = new StringSelectMenuBuilder()
         .setCustomId(`${TEMPLE_SELECT_PREFIX}${guild.id}:${memberId}`)
         .setPlaceholder(selectable.length === 1 ? "L'unico Tempio disponibile" : "Scegli il tuo Tempio")
@@ -238,7 +237,8 @@ export async function handleTempleModuleOffer(interaction, send) {
     const details = buildTempleDetails(guild, config, new Set(selectable.map((x) => x.key)));
     const template = selectable.length === 1 ? (config.forcedSelectionMessage || defaultForcedSelectionMessage) : (config.selectionMessage || defaultSelectionMessage);
     const text = replaceSelectionVariables(template, target, details, selectable[0]?.count ?? 0);
-    await selectionChannel.send({ content: text, components: [buildSelectionComponents(guild, config, target.id)] }).catch((err) => logger.error({ err, guildId: guild.id, userId: target.id }, "Temple onboarding: invio modulo fallito"));
+    const menu = buildSelectionComponents(guild, config, target.id, selectable);
+    await selectionChannel.send({ content: text, components: [menu] }).catch((err) => logger.error({ err, guildId: guild.id, userId: target.id }, "Temple onboarding: invio modulo fallito"));
     await interaction.update({ content: `🏛️ Modulo per la scelta del Tempio inviato a ${target}.`, components: [], embeds: interaction.message.embeds });
 }
 export async function sendTempleSelection(member) {
