@@ -56,7 +56,7 @@ import { startDonationTracker } from "./utils/donation-tracker.js";
 import { startJoinRequestTracker } from "./utils/join-request-tracker.js";
 import { startBirthdayScheduler } from "./utils/birthday-tracker.js";
 import { trackMessageActivity, trackVoiceState } from "./utils/activity-tracker.js";
-import { handleTempleApproval, handleTempleSelection, handleTempleFormConfirmation } from "./utils/temple-onboarding.js";
+import { handleTempleApproval, handleTempleSelection, handleTempleModuleOffer } from "./utils/temple-onboarding.js";
 const commands = new Collection();
 commands.set(sondaggioCommand.data.name, sondaggioCommand);
 commands.set(impostazioniCommand.data.name, impostazioniCommand);
@@ -592,7 +592,7 @@ export async function startBot() {
         }
         try {
             await handleMemberJoin(member);
-            await import("./utils/temple-onboarding.js").then(({ sendTempleFormConfirmation }) => sendTempleFormConfirmation(member));
+            await import("./utils/temple-onboarding.js").then(({ sendTempleModuleOffer }) => sendTempleModuleOffer(member));
         }
         catch (err) {
             logger.error({ err }, "Error in guildMemberAdd");
@@ -629,16 +629,16 @@ export async function startBot() {
         trackVoiceState({ guildId: newState.guild.id, userId: newState.id, channelId: newState.channelId });
     });
     client.on("interactionCreate", async (interaction) => {
+        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:offer-send:")) {
+            await handleTempleModuleOffer(interaction, true);
+            return;
+        }
+        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:offer-deny:")) {
+            await handleTempleModuleOffer(interaction, false);
+            return;
+        }
         if (interaction.isStringSelectMenu() && interaction.customId.startsWith("temple-onboarding:select:")) {
             safeExecute(async () => { await handleTempleSelection(interaction); }, `temple-selection:${interaction.customId}`);
-            return;
-        }
-        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:send-form:")) {
-            safeExecute(async () => { await handleTempleFormConfirmation(interaction, true); }, `temple-send-form:${interaction.customId}`);
-            return;
-        }
-        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:cancel-form:")) {
-            safeExecute(async () => { await handleTempleFormConfirmation(interaction, false); }, `temple-cancel-form:${interaction.customId}`);
             return;
         }
         if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:approve:")) {

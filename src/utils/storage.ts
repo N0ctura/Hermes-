@@ -146,7 +146,6 @@ export interface GuildWelcomeLeaveConfig {
 export interface TempleOnboardingTempleConfig {
   key: string;
   roleId?: string;
-  roleIds?: string[];
   channelId?: string;
   coLeaderRoleIds?: string[];
   assetUrl?: string;
@@ -154,6 +153,9 @@ export interface TempleOnboardingTempleConfig {
   welcomeMessage?: string;
   templeMessage?: string;
   generalMessage?: string;
+  selectionDescription?: string;
+  godRoleIds?: string[];
+  roleIds?: string[];
   routineEnabled?: boolean;
   routineMessage?: string;
 }
@@ -181,7 +183,9 @@ export interface GuildTempleOnboardingConfig {
   generalChannelId?: string;
   approvalRoleIds?: string[];
   selectionMessage?: string;
+  forcedSelectionMessage?: string;
   approvalMessage?: string;
+  moduleOfferMessage?: string;
   approvedGeneralMessage?: string;
   approvedTempleMessage?: string;
   sendGeneralMessage?: boolean;

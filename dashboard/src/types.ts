@@ -345,7 +345,6 @@ export interface BotConfigDto {
 export interface TempleOnboardingTemple {
   key: string;
   roleId?: string;
-  roleIds?: string[];
   channelId?: string;
   coLeaderRoleIds?: string[];
   assetUrl?: string;
@@ -353,6 +352,9 @@ export interface TempleOnboardingTemple {
   welcomeMessage?: string;
   templeMessage?: string;
   generalMessage?: string;
+  selectionDescription?: string;
+  godRoleIds?: string[];
+  roleIds?: string[];
   routineEnabled?: boolean;
   routineMessage?: string;
 }
@@ -374,7 +376,9 @@ export interface GuildTempleOnboarding {
   generalChannelId?: string;
   approvalRoleIds?: string[];
   selectionMessage?: string;
+  forcedSelectionMessage?: string;
   approvalMessage?: string;
+  moduleOfferMessage?: string;
   approvedGeneralMessage?: string;
   approvedTempleMessage?: string;
   sendGeneralMessage?: boolean;
