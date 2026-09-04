@@ -70,6 +70,20 @@ function persistConfig(next) {
         all.push(next);
     saveConfig({ ...cfg, templeOnboardingConfigs: all });
 }
+/**
+ * Aggiorna la cache dei membri prima di calcolare l'equilibrio dei Templi.
+ * Il conteggio usa Role.members; la fetch evita di usare una cache vecchia
+ * subito dopo che un ruolo Tempio è stato assegnato. Le richieste pending
+ * NON vengono considerate prenotazioni.
+ */
+async function refreshMembersBeforeTempleCount(guild) {
+    try {
+        await guild.members.fetch();
+    }
+    catch (err) {
+        logger.warn({ err, guildId: guild.id }, "Temple onboarding: refresh membri fallito; uso la cache disponibile per il conteggio");
+    }
+}
 export function getTemplePopulationSnapshot(guild, config) {
     return TEMPLE_DEFINITIONS.map((definition) => {
         const tc = config.temples.find((t) => t.key === definition.key);
@@ -175,6 +189,7 @@ export async function handleTempleModuleOffer(interaction, send) {
         await interaction.reply({ content: "❌ Il canale del modulo Templi non è configurato correttamente nella dashboard.", ephemeral: true });
         return;
     }
+    await refreshMembersBeforeTempleCount(guild);
     const selectable = getSelectableTemples(guild, config);
     if (!selectable.length) {
         await interaction.reply({ content: "❌ Non ci sono Templi configurati e disponibili.", ephemeral: true });
@@ -237,6 +252,7 @@ export async function handleTempleSelection(interaction) {
         return;
     }
     const key = interaction.values[0];
+    await refreshMembersBeforeTempleCount(guild);
     const selectable = getSelectableTemples(guild, config);
     if (!selectable.some((t) => t.key === key)) {
         await interaction.reply({ content: "❌ Questo Tempio non è più selezionabile: l'equilibrio è cambiato. Chiedi ai co-capi di inviare un nuovo modulo.", ephemeral: true });
@@ -307,6 +323,7 @@ export async function handleTempleApproval(interaction, approve) {
         await interaction.update({ content: "⚠️ L'utente non è più presente nel server.", embeds: interaction.message.embeds, components: [] });
         return;
     }
+    await refreshMembersBeforeTempleCount(guild);
     const currentSelectable = getSelectableTemples(guild, config);
     if (!currentSelectable.some((t) => t.key === request.templeKey)) {
         request.status = "denied";
