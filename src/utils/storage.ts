@@ -146,6 +146,7 @@ export interface GuildWelcomeLeaveConfig {
 export interface TempleOnboardingTempleConfig {
   key: string;
   roleId?: string;
+  roleIds?: string[];
   channelId?: string;
   coLeaderRoleIds?: string[];
   assetUrl?: string;

@@ -73,7 +73,7 @@ import { startDonationTracker } from "./utils/donation-tracker.js";
 import { startJoinRequestTracker } from "./utils/join-request-tracker.js";
 import { startBirthdayScheduler } from "./utils/birthday-tracker.js";
 import { trackMessageActivity, trackVoiceState } from "./utils/activity-tracker.js";
-import { handleTempleApproval, handleTempleSelection } from "./utils/temple-onboarding.js";
+import { handleTempleApproval, handleTempleSelection, handleTempleFormConfirmation } from "./utils/temple-onboarding.js";
 
 type BotCommand =
     | typeof sondaggioCommand
@@ -636,7 +636,7 @@ export async function startBot(): Promise<void> {
         }
         try {
             await handleMemberJoin(member as GuildMember);
-            await import("./utils/temple-onboarding.js").then(({ sendTempleSelection }) => sendTempleSelection(member as GuildMember));
+            await import("./utils/temple-onboarding.js").then(({ sendTempleFormConfirmation }) => sendTempleFormConfirmation(member as GuildMember));
         } catch (err) {
             logger.error({ err }, "Error in guildMemberAdd");
         }
@@ -673,6 +673,15 @@ export async function startBot(): Promise<void> {
     client.on("interactionCreate", async (interaction: Interaction) => {
         if (interaction.isStringSelectMenu() && interaction.customId.startsWith("temple-onboarding:select:")) {
             safeExecute(async () => { await handleTempleSelection(interaction); }, `temple-selection:${interaction.customId}`);
+            return;
+        }
+
+        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:send-form:")) {
+            safeExecute(async () => { await handleTempleFormConfirmation(interaction as ButtonInteraction, true); }, `temple-send-form:${interaction.customId}`);
+            return;
+        }
+        if (interaction.isButton() && interaction.customId.startsWith("temple-onboarding:cancel-form:")) {
+            safeExecute(async () => { await handleTempleFormConfirmation(interaction as ButtonInteraction, false); }, `temple-cancel-form:${interaction.customId}`);
             return;
         }
 

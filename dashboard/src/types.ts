@@ -345,6 +345,7 @@ export interface BotConfigDto {
 export interface TempleOnboardingTemple {
   key: string;
   roleId?: string;
+  roleIds?: string[];
   channelId?: string;
   coLeaderRoleIds?: string[];
   assetUrl?: string;
