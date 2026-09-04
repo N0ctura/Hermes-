@@ -2,6 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelec
 import crypto from "node:crypto";
 import { loadConfig, saveConfig } from "./storage.js";
 import { TEMPLE_DEFINITIONS, countEffectiveTempleMembers } from "./temples.js";
+import { normalize } from "./normalize.js";
 import { logger } from "./logger.js";
 export const TEMPLE_SELECT_PREFIX = "temple-onboarding:select:";
 export const TEMPLE_APPROVE_PREFIX = "temple-onboarding:approve:";
@@ -70,11 +71,30 @@ function persistConfig(next) {
         all.push(next);
     saveConfig({ ...cfg, templeOnboardingConfigs: all });
 }
+function resolveTempleRoleIds(guild, config, key) {
+    const tc = config.temples.find((t) => t.key === key);
+    const definition = TEMPLE_DEFINITIONS.find((d) => d.key === key);
+    const roleId = tc?.roleId ??
+        guild.roles.cache.find((role) => {
+            const name = normalize(role.name);
+            return name.includes("tempio") && definition ? definition.aliases.some((alias) => name.includes(normalize(alias))) : false;
+        })?.id;
+    const coLeaderRoleIds = tc?.coLeaderRoleIds && tc.coLeaderRoleIds.length > 0
+        ? tc.coLeaderRoleIds
+        : guild.roles.cache
+            .filter((role) => definition?.coLeaderRoleNames.some((coLeaderName) => normalize(role.name) === normalize(coLeaderName)))
+            .map((role) => role.id);
+    if (!roleId) {
+        logger.warn({ guildId: guild.id, templeKey: key }, "Temple onboarding: ruolo principale del Tempio non configurato o non rilevabile; il conteggio sarà 0");
+    }
+    return { roleId, coLeaderRoleIds };
+}
 export function getTemplePopulationSnapshot(guild, config) {
     return TEMPLE_DEFINITIONS.map((definition) => {
         const tc = config.temples.find((t) => t.key === definition.key);
-        const count = countEffectiveTempleMembers(guild, tc?.roleId, tc?.coLeaderRoleIds ?? []);
-        return { key: definition.key, displayName: definition.displayName, count, enabled: tc?.enabled !== false, roleId: tc?.roleId };
+        const { roleId, coLeaderRoleIds } = resolveTempleRoleIds(guild, config, definition.key);
+        const count = countEffectiveTempleMembers(guild, roleId, coLeaderRoleIds);
+        return { key: definition.key, displayName: definition.displayName, count, enabled: tc?.enabled !== false, roleId };
     });
 }
 /**
@@ -92,8 +112,8 @@ export function getTemplePopulationSnapshot(guild, config) {
 function getFreshTemplePopulationSnapshot(guild, config) {
     return TEMPLE_DEFINITIONS.map((definition) => {
         const tc = config.temples.find((t) => t.key === definition.key);
-        const roleId = tc?.roleId;
-        const coLeaderRoleIds = new Set(tc?.coLeaderRoleIds ?? []);
+        const { roleId, coLeaderRoleIds } = resolveTempleRoleIds(guild, config, definition.key);
+        const excluded = new Set(coLeaderRoleIds.filter(Boolean));
         let count = 0;
         if (roleId) {
             for (const member of guild.members.cache.values()) {
@@ -102,7 +122,7 @@ function getFreshTemplePopulationSnapshot(guild, config) {
                 if (!member.roles.cache.has(roleId))
                     continue;
                 // Un membro del Tempio che è anche co-capo NON conta come membro effettivo.
-                const isCoLeader = [...coLeaderRoleIds].some((id) => member.roles.cache.has(id));
+                const isCoLeader = [...excluded].some((id) => member.roles.cache.has(id));
                 if (!isCoLeader)
                     count++;
             }
