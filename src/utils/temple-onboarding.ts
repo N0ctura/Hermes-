@@ -86,23 +86,6 @@ function persistConfig(next: GuildTempleOnboardingConfig): void {
   saveConfig({ ...cfg, templeOnboardingConfigs: all });
 }
 
-/**
- * Aggiorna la cache dei membri prima di calcolare l'equilibrio dei Templi.
- * Il conteggio usa Role.members; la fetch evita di usare una cache vecchia
- * subito dopo che un ruolo Tempio è stato assegnato. Le richieste pending
- * NON vengono considerate prenotazioni.
- */
-async function refreshMembersBeforeTempleCount(guild: Guild): Promise<void> {
-  try {
-    await guild.members.fetch();
-  } catch (err) {
-    logger.warn(
-      { err, guildId: guild.id },
-      "Temple onboarding: refresh membri fallito; uso la cache disponibile per il conteggio",
-    );
-  }
-}
-
 export function getTemplePopulationSnapshot(guild: Guild, config: GuildTempleOnboardingConfig) {
   return TEMPLE_DEFINITIONS.map((definition) => {
     const tc = config.temples.find((t) => t.key === definition.key);
@@ -142,24 +125,6 @@ function buildTempleDetails(guild: Guild, config: GuildTempleOnboardingConfig, s
         .replace(/\{GODS\}/gi, roleMentions(guild, t.godRoleIds));
     })
     .join("\n\n");
-}
-
-function buildSelectionMessage(
-  template: string,
-  member: GuildMember,
-  details: string,
-  min: number,
-): string {
-  const hasDetailsPlaceholder = /\{TEMPLE_DETAILS\}/i.test(template);
-  const replaced = replaceSelectionVariables(template, member, details, min);
-
-  // La descrizione dei Templi deve comparire anche se l'amministratore ha
-  // scritto un messaggio personalizzato senza inserire manualmente la variabile.
-  // Se invece {TEMPLE_DETAILS} è presente, rispettiamo esattamente la posizione
-  // scelta nella dashboard.
-  return hasDetailsPlaceholder
-    ? replaced
-    : `${replaced.trim()}\n\n${details}`;
 }
 
 function replaceSelectionVariables(template: string, member: GuildMember, details: string, min: number): string {
@@ -221,7 +186,6 @@ export async function handleTempleModuleOffer(interaction: ButtonInteraction, se
     await interaction.reply({ content: "❌ Il canale del modulo Templi non è configurato correttamente nella dashboard.", ephemeral: true });
     return;
   }
-  await refreshMembersBeforeTempleCount(guild);
   const selectable = getSelectableTemples(guild, config);
   if (!selectable.length) {
     await interaction.reply({ content: "❌ Non ci sono Templi configurati e disponibili.", ephemeral: true });
@@ -229,7 +193,7 @@ export async function handleTempleModuleOffer(interaction: ButtonInteraction, se
   }
   const details = buildTempleDetails(guild, config, new Set(selectable.map((x) => x.key)));
   const template = selectable.length === 1 ? (config.forcedSelectionMessage || defaultForcedSelectionMessage) : (config.selectionMessage || defaultSelectionMessage);
-  const text = buildSelectionMessage(template, target, details, selectable[0]?.count ?? 0);
+  const text = replaceSelectionVariables(template, target, details, selectable[0]?.count ?? 0);
   await (selectionChannel as TextChannel).send({ content: text, components: [buildSelectionComponents(guild, config, target.id)] }).catch((err) => logger.error({ err, guildId: guild.id, userId: target.id }, "Temple onboarding: invio modulo fallito"));
   await interaction.update({ content: `🏛️ Modulo per la scelta del Tempio inviato a ${target}.`, components: [], embeds: interaction.message.embeds });
 }
@@ -272,13 +236,12 @@ export async function handleTempleSelection(interaction: StringSelectMenuInterac
   if (!guild) return;
   const config = getConfig(guild.id);
   if (!config?.enabled) return;
-  const [, , , expectedMemberId] = interaction.customId.split(":");
+  const [, , expectedMemberId] = interaction.customId.split(":");
   if (interaction.user.id !== expectedMemberId) {
     await interaction.reply({ content: "⛔ Questo modulo è riservato al nuovo arrivato indicato nel messaggio.", ephemeral: true });
     return;
   }
   const key = interaction.values[0];
-  await refreshMembersBeforeTempleCount(guild);
   const selectable = getSelectableTemples(guild, config);
   if (!selectable.some((t) => t.key === key)) {
     await interaction.reply({ content: "❌ Questo Tempio non è più selezionabile: l'equilibrio è cambiato. Chiedi ai co-capi di inviare un nuovo modulo.", ephemeral: true });
@@ -334,7 +297,6 @@ export async function handleTempleApproval(interaction: ButtonInteraction, appro
     await interaction.update({ content: "❌ **Richiesta negata.**", embeds: interaction.message.embeds, components: [] }); return;
   }
   if (!target) { await interaction.update({ content: "⚠️ L'utente non è più presente nel server.", embeds: interaction.message.embeds, components: [] }); return; }
-  await refreshMembersBeforeTempleCount(guild);
   const currentSelectable = getSelectableTemples(guild, config);
   if (!currentSelectable.some((t) => t.key === request.templeKey)) {
     request.status = "denied"; request.resolvedAt = new Date().toISOString(); request.resolvedBy = interaction.user.id; persistConfig(config);
