@@ -2208,8 +2208,15 @@ const TabTempleOnboarding: React.FC<{
     };
     const selectedApproval = new Set(conf.approvalRoleIds ?? []);
     const toggleApprovalRole = (id: string) => { const n = new Set(selectedApproval); n.has(id) ? n.delete(id) : n.add(id); onChange({ approvalRoleIds: [...n] }); };
+    const selectedBlocked = new Set(conf.blockedInteractionRoleIds ?? []);
+    const toggleBlockedRole = (id: string) => { const n = new Set(selectedBlocked); n.has(id) ? n.delete(id) : n.add(id); onChange({ blockedInteractionRoleIds: [...n] }); };
     return <div className="space-y-5 animate-fade-in">
         <div className="flex items-center justify-between gap-4"><div><h1 className="text-2xl font-black tracking-tight">Onboarding Templi</h1><p className="text-sm text-neutral-400 mt-1">Ingresso, equilibrio, approvazione dei co-capi e ruoli automatici.</p></div><label className="inline-flex items-center gap-2"><Toggle value={!!conf.enabled} onChange={(enabled) => onChange({ enabled })} /><span className="text-sm font-semibold">{conf.enabled ? "Attivo" : "Disattivato"}</span></label></div>
+        <div className="bg-red-950/30 border border-red-900/60 rounded-2xl p-5 space-y-3">
+            <h3 className="font-bold text-red-200">Ruoli bloccati dai nuovi arrivati</h3>
+            <p className="text-xs text-red-200/70">Chi ha uno di questi ruoli NON può in nessun caso interagire con offerta modulo, scelta Tempio o approvazione — vale anche per Amministratori del server. Impostazione indipendente da tutto il resto (es. ruolo "pellegrino").</p>
+            <div className="max-h-40 overflow-y-auto space-y-1">{roles.filter(r => !r.managed).map(r => <label key={r.id} className="flex items-center gap-2 text-xs p-1.5 rounded bg-neutral-950"><input type="checkbox" checked={selectedBlocked.has(r.id)} onChange={() => toggleBlockedRole(r.id)} />{r.name}</label>)}</div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4"><h3 className="font-bold">Ingresso</h3>
                 <Field label="Canale scelta Tempio"><select value={conf.selectionChannelId ?? ""} onChange={e => onChange({ selectionChannelId: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm"><option value="">— seleziona —</option>{channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}</select></Field>

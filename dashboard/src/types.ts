@@ -286,6 +286,7 @@ export interface DiscordRole {
   name: string;
   color: number;
   position: number;
+  managed?: boolean;
 }
 
 export interface BotStatusDto {
@@ -375,6 +376,7 @@ export interface GuildTempleOnboarding {
   approvalChannelId?: string;
   generalChannelId?: string;
   approvalRoleIds?: string[];
+  blockedInteractionRoleIds?: string[];
   selectionMessage?: string;
   forcedSelectionMessage?: string;
   approvalMessage?: string;

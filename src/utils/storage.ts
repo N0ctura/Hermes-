@@ -182,6 +182,14 @@ export interface GuildTempleOnboardingConfig {
   approvalChannelId?: string;
   generalChannelId?: string;
   approvalRoleIds?: string[];
+  /**
+   * Ruoli che NON possono interagire in alcun modo con il flusso "nuovi arrivati"
+   * (offerta modulo, selezione Tempio, approvazione), indipendentemente da
+   * qualunque altro permesso (incluso Amministratore). Serve sia per escludere
+   * ruoli come "pellegrino" sia come rete di sicurezza contro click accidentali
+   * di staff che non deve gestire l'onboarding.
+   */
+  blockedInteractionRoleIds?: string[];
   selectionMessage?: string;
   forcedSelectionMessage?: string;
   approvalMessage?: string;

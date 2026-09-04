@@ -27,6 +27,22 @@ const defaultTempleDetails = {
 function getConfig(guildId) {
     return loadConfig().templeOnboardingConfigs?.find((c) => c.guildId === guildId);
 }
+/**
+ * Vero se il membro ha almeno uno dei ruoli in `blockedInteractionRoleIds`.
+ * Questo controllo ha SEMPRE la precedenza su ogni altra autorizzazione
+ * (ruoli approvalRoleIds, coLeaderRoleIds, permesso Amministratore su Discord
+ * incluso): è una rete di sicurezza indipendente dal resto della configurazione
+ * dell'onboarding, pensata per bloccare ruoli come "pellegrino" e per evitare
+ * che un click accidentale di uno staff non dedicato a questo flusso rompa
+ * una richiesta in corso.
+ */
+function isBlockedFromNewArrivals(member, config) {
+    const blocked = new Set(config.blockedInteractionRoleIds ?? []);
+    if (!blocked.size)
+        return false;
+    return member.roles.cache.some((role) => blocked.has(role.id));
+}
+const BLOCKED_INTERACTION_REPLY = "⛔ Il tuo ruolo non può interagire con la gestione dei nuovi arrivati.";
 export function defaultTempleOnboardingConfig(guildId, guildName) {
     return {
         guildId,
@@ -140,6 +156,10 @@ export async function handleTempleModuleOffer(interaction, send) {
     const prefix = send ? TEMPLE_OFFER_SEND_PREFIX : TEMPLE_OFFER_DENY_PREFIX;
     const memberId = interaction.customId.slice(prefix.length);
     const resolver = interaction.member;
+    if (isBlockedFromNewArrivals(resolver, config)) {
+        await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
+        return;
+    }
     const authorized = (config.approvalRoleIds ?? []).some((id) => resolver.roles.cache.has(id));
     if (!authorized) {
         await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire l'onboarding dei Templi.", ephemeral: true });
@@ -220,9 +240,13 @@ export async function handleTempleSelection(interaction) {
     const config = getConfig(guild.id);
     if (!config?.enabled)
         return;
-    const [, , expectedMemberId] = interaction.customId.split(":");
+    const [, , , expectedMemberId] = interaction.customId.split(":");
     if (interaction.user.id !== expectedMemberId) {
         await interaction.reply({ content: "⛔ Questo modulo è riservato al nuovo arrivato indicato nel messaggio.", ephemeral: true });
+        return;
+    }
+    if (isBlockedFromNewArrivals(interaction.member, config)) {
+        await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
         return;
     }
     const key = interaction.values[0];
@@ -279,6 +303,10 @@ export async function handleTempleApproval(interaction, approve) {
         return;
     }
     const resolver = interaction.member;
+    if (isBlockedFromNewArrivals(resolver, config)) {
+        await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
+        return;
+    }
     if (!canResolve(resolver, config, request)) {
         await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire questa richiesta.", ephemeral: true });
         return;
