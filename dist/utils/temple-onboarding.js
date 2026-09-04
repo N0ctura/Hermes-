@@ -77,8 +77,54 @@ export function getTemplePopulationSnapshot(guild, config) {
         return { key: definition.key, displayName: definition.displayName, count, enabled: tc?.enabled !== false, roleId: tc?.roleId };
     });
 }
+/**
+ * Conteggio reale usato dall'onboarding.
+ *
+ * Per ogni Tempio:
+ *  1. prende il ruolo principale del Tempio;
+ *  2. conta le persone che hanno quel ruolo;
+ *  3. se una di quelle persone ha anche uno dei ruoli co-capo del Tempio,
+ *     la esclude dal conteggio.
+ *
+ * Il conteggio viene ricostruito OGNI VOLTA dal set corrente dei GuildMember,
+ * senza usare un risultato precedente o un contatore persistito.
+ */
+function getFreshTemplePopulationSnapshot(guild, config) {
+    return TEMPLE_DEFINITIONS.map((definition) => {
+        const tc = config.temples.find((t) => t.key === definition.key);
+        const roleId = tc?.roleId;
+        const coLeaderRoleIds = new Set(tc?.coLeaderRoleIds ?? []);
+        let count = 0;
+        if (roleId) {
+            for (const member of guild.members.cache.values()) {
+                if (member.user.bot)
+                    continue;
+                if (!member.roles.cache.has(roleId))
+                    continue;
+                // Un membro del Tempio che è anche co-capo NON conta come membro effettivo.
+                const isCoLeader = [...coLeaderRoleIds].some((id) => member.roles.cache.has(id));
+                if (!isCoLeader)
+                    count++;
+            }
+        }
+        return {
+            key: definition.key,
+            displayName: definition.displayName,
+            count,
+            enabled: tc?.enabled !== false,
+            roleId,
+        };
+    });
+}
 export function getSelectableTemples(guild, config) {
     const snapshot = getTemplePopulationSnapshot(guild, config).filter((x) => x.enabled && x.roleId);
+    if (!snapshot.length)
+        return [];
+    const min = Math.min(...snapshot.map((x) => x.count));
+    return snapshot.filter((x) => x.count === min);
+}
+function getSelectableTemplesFromFreshSnapshot(guild, config) {
+    const snapshot = getFreshTemplePopulationSnapshot(guild, config).filter((x) => x.enabled && x.roleId);
     if (!snapshot.length)
         return [];
     const min = Math.min(...snapshot.map((x) => x.count));
@@ -102,7 +148,7 @@ async function refreshTempleMemberCache(guild) {
 }
 async function getFreshSelectableTemples(guild, config) {
     await refreshTempleMemberCache(guild);
-    return getSelectableTemples(guild, config);
+    return getSelectableTemplesFromFreshSnapshot(guild, config);
 }
 function buildSelectionComponents(guild, config, memberId) {
     const selectable = getSelectableTemples(guild, config);
@@ -262,7 +308,7 @@ export async function handleTempleSelection(interaction) {
     const approvalChannel = config.approvalChannelId ? await guild.channels.fetch(config.approvalChannelId).catch(() => null) : null;
     if (approvalChannel?.isTextBased() && !approvalChannel.isThread()) {
         const mentions = (config.approvalRoleIds ?? []).map((id) => `<@&${id}>`).join(" ");
-        const embed = new EmbedBuilder().setTitle("🏛️ Richiesta ingresso Tempio").setDescription(formatApprovalText(interaction.member, key, getTemplePopulationSnapshot(guild, config))).setColor(0xc9a227).setTimestamp(new Date());
+        const embed = new EmbedBuilder().setTitle("🏛️ Richiesta ingresso Tempio").setDescription(formatApprovalText(interaction.member, key, getFreshTemplePopulationSnapshot(guild, config))).setColor(0xc9a227).setTimestamp(new Date());
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${TEMPLE_APPROVE_PREFIX}${request.id}`).setLabel("Autorizza").setEmoji("✅").setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`${TEMPLE_DENY_PREFIX}${request.id}`).setLabel("Nega").setEmoji("❌").setStyle(ButtonStyle.Danger));
         const sent = await approvalChannel.send({ content: mentions || undefined, embeds: [embed], components: [row], allowedMentions: { roles: config.approvalRoleIds ?? [] } }).catch(() => null);
         if (sent) {
