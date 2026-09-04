@@ -44,31 +44,6 @@ function getConfig(guildId: string): GuildTempleOnboardingConfig | undefined {
   return loadConfig().templeOnboardingConfigs?.find((c) => c.guildId === guildId);
 }
 
-/**
- * Vero se il membro ha almeno uno dei ruoli in `blockedInteractionRoleIds`.
- * Questo controllo ha SEMPRE la precedenza su ogni altra autorizzazione
- * (ruoli approvalRoleIds, coLeaderRoleIds, permesso Amministratore su Discord
- * incluso): è una rete di sicurezza indipendente dal resto della configurazione
- * dell'onboarding, pensata per bloccare ruoli come "pellegrino" e per evitare
- * che un click accidentale di uno staff non dedicato a questo flusso rompa
- * una richiesta in corso.
- */
-function isBlockedFromNewArrivals(member: GuildMember, config: GuildTempleOnboardingConfig): boolean {
-  const blocked = new Set(config.blockedInteractionRoleIds ?? []);
-  if (!blocked.size) return false;
-  return member.roles.cache.some((role) => blocked.has(role.id));
-}
-
-function isTempleManager(member: GuildMember, config: GuildTempleOnboardingConfig): boolean {
-  const global = new Set(config.approvalRoleIds ?? []);
-  return member.roles.cache.some((role) => {
-    if (global.has(role.id)) return true;
-    return config.temples.some((temple) => (temple.coLeaderRoleIds ?? []).includes(role.id));
-  });
-}
-
-const BLOCKED_INTERACTION_REPLY = "⛔ Il tuo ruolo non può interagire con la gestione dei nuovi arrivati.";
-
 export function defaultTempleOnboardingConfig(guildId: string, guildName: string): GuildTempleOnboardingConfig {
   return {
     guildId,
@@ -124,6 +99,27 @@ export function getSelectableTemples(guild: Guild, config: GuildTempleOnboarding
   if (!snapshot.length) return [];
   const min = Math.min(...snapshot.map((x) => x.count));
   return snapshot.filter((x) => x.count === min);
+}
+
+/**
+ * Ricalcola il conteggio dei Templi usando i membri attuali di Discord.
+ * Non usa un conteggio persistito: prima aggiorna la cache dei membri e poi
+ * legge nuovamente i membri associati ai ruoli principali dei Templi.
+ */
+async function refreshTempleMemberCache(guild: Guild): Promise<void> {
+  try {
+    await guild.members.fetch();
+  } catch (err) {
+    // Se il fetch completo fallisce, manteniamo la cache disponibile invece
+    // di bloccare l'onboarding. Il conteggio viene comunque rifatto subito
+    // dopo sulla cache corrente.
+    logger.warn({ err, guildId: guild.id }, "Temple onboarding: refresh membri Discord fallito, uso la cache corrente");
+  }
+}
+
+async function getFreshSelectableTemples(guild: Guild, config: GuildTempleOnboardingConfig) {
+  await refreshTempleMemberCache(guild);
+  return getSelectableTemples(guild, config);
 }
 
 function buildSelectionComponents(guild: Guild, config: GuildTempleOnboardingConfig, memberId: string) {
@@ -187,11 +183,7 @@ export async function handleTempleModuleOffer(interaction: ButtonInteraction, se
   const prefix = send ? TEMPLE_OFFER_SEND_PREFIX : TEMPLE_OFFER_DENY_PREFIX;
   const memberId = interaction.customId.slice(prefix.length);
   const resolver = interaction.member as GuildMember;
-  const authorized = isTempleManager(resolver, config);
-  if (isBlockedFromNewArrivals(resolver, config) && !authorized) {
-    await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
-    return;
-  }
+  const authorized = (config.approvalRoleIds ?? []).some((id) => resolver.roles.cache.has(id));
   if (!authorized) {
     await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire l'onboarding dei Templi.", ephemeral: true });
     return;
@@ -215,7 +207,7 @@ export async function handleTempleModuleOffer(interaction: ButtonInteraction, se
     await interaction.reply({ content: "❌ Il canale del modulo Templi non è configurato correttamente nella dashboard.", ephemeral: true });
     return;
   }
-  const selectable = getSelectableTemples(guild, config);
+  const selectable = await getFreshSelectableTemples(guild, config);
   if (!selectable.length) {
     await interaction.reply({ content: "❌ Non ci sono Templi configurati e disponibili.", ephemeral: true });
     return;
@@ -265,17 +257,13 @@ export async function handleTempleSelection(interaction: StringSelectMenuInterac
   if (!guild) return;
   const config = getConfig(guild.id);
   if (!config?.enabled) return;
-  const [, , , expectedMemberId] = interaction.customId.split(":");
+  const [, , expectedMemberId] = interaction.customId.split(":");
   if (interaction.user.id !== expectedMemberId) {
     await interaction.reply({ content: "⛔ Questo modulo è riservato al nuovo arrivato indicato nel messaggio.", ephemeral: true });
     return;
   }
-  if (isBlockedFromNewArrivals(interaction.member as GuildMember, config)) {
-    await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
-    return;
-  }
   const key = interaction.values[0];
-  const selectable = getSelectableTemples(guild, config);
+  const selectable = await getFreshSelectableTemples(guild, config);
   if (!selectable.some((t) => t.key === key)) {
     await interaction.reply({ content: "❌ Questo Tempio non è più selezionabile: l'equilibrio è cambiato. Chiedi ai co-capi di inviare un nuovo modulo.", ephemeral: true });
     return;
@@ -323,19 +311,14 @@ export async function handleTempleApproval(interaction: ButtonInteraction, appro
   const request = (config.requests ?? []).find((r) => r.id === requestId);
   if (!request || request.status !== "pending") { await interaction.reply({ content: "❌ Questa richiesta non è più disponibile.", ephemeral: true }); return; }
   const resolver = interaction.member as GuildMember;
-  const canHandleRequest = canResolve(resolver, config, request);
-  if (isBlockedFromNewArrivals(resolver, config) && !canHandleRequest) {
-    await interaction.reply({ content: BLOCKED_INTERACTION_REPLY, ephemeral: true });
-    return;
-  }
-  if (!canHandleRequest) { await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire questa richiesta.", ephemeral: true }); return; }
+  if (!canResolve(resolver, config, request)) { await interaction.reply({ content: "⛔ Non hai un ruolo autorizzato a gestire questa richiesta.", ephemeral: true }); return; }
   const target = await guild.members.fetch(request.userId).catch(() => null);
   if (!approve) {
     request.status = "denied"; request.resolvedAt = new Date().toISOString(); request.resolvedBy = interaction.user.id; persistConfig(config);
     await interaction.update({ content: "❌ **Richiesta negata.**", embeds: interaction.message.embeds, components: [] }); return;
   }
   if (!target) { await interaction.update({ content: "⚠️ L'utente non è più presente nel server.", embeds: interaction.message.embeds, components: [] }); return; }
-  const currentSelectable = getSelectableTemples(guild, config);
+  const currentSelectable = await getFreshSelectableTemples(guild, config);
   if (!currentSelectable.some((t) => t.key === request.templeKey)) {
     request.status = "denied"; request.resolvedAt = new Date().toISOString(); request.resolvedBy = interaction.user.id; persistConfig(config);
     await interaction.update({ content: "⚠️ La richiesta non può essere autorizzata perché nel frattempo l'equilibrio dei Templi è cambiato.", embeds: interaction.message.embeds, components: [] }); return;
