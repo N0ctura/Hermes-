@@ -30,6 +30,7 @@ process.on("uncaughtException", (err) => {
     }
 });
 import { handleMessageForTTS, handleVoiceStateUpdate } from "./utils/tts.js";
+import { calcolaEspressione } from "./utils/calculator.js";
 import { Client, GatewayIntentBits, Partials, REST, Routes, Collection, AttachmentBuilder, EmbedBuilder, } from "discord.js";
 import { logger } from "./utils/logger.js";
 import * as sondaggioCommand from "./commands/sondaggio.js";
@@ -773,6 +774,22 @@ export async function startBot() {
             trackMessageActivity(message.guild.id, message.author.id);
         const content = message.content.trim();
         const guildId = message.guild?.id;
+        // Calcolatrice: se il bot viene taggato con un'operazione, rispondi col risultato.
+        if (client.user && message.mentions.has(client.user.id)) {
+            const espressione = content
+                .replace(/<@!?\d+>/g, "")
+                .trim();
+            if (espressione) {
+                const esito = calcolaEspressione(espressione);
+                if (esito.ok) {
+                    await message.reply({ content: `🧮 = **${esito.risultato}**` });
+                }
+                else {
+                    await message.reply({ content: `❌ ${esito.errore}` });
+                }
+                return;
+            }
+        }
         if (guildId && message.member) {
             await handleMessageForTTS({
                 guildId,
