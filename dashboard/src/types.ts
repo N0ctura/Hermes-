@@ -320,13 +320,20 @@ export interface GuildActivityUser {
   username?: string;
   displayName?: string;
   avatarUrl?: string;
+  templeKey?: string | null;
   messages: number;
   voiceSeconds: number;
+}
+
+export interface GuildActivityTemple {
+  key: string;
+  displayName: string;
 }
 
 export interface GuildActivityDto {
   days: GuildActivityDay[];
   users: GuildActivityUser[];
+  temples: GuildActivityTemple[];
 }
 
 export interface BotConfigDto {

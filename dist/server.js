@@ -10,6 +10,7 @@ import { refreshBirthdayListMessage } from "./utils/birthday-list.js";
 import { fetchClanById, fetchClanMembers, fetchClanLog, fetchClanLedger } from "./utils/wolvesville.js";
 import { getGuildActivity } from "./utils/activity-tracker.js";
 import { defaultTempleOnboardingConfig, getTemplePopulationSnapshot } from "./utils/temple-onboarding.js";
+import { TEMPLE_DEFINITIONS, resolveTempleKeyForMember } from "./utils/temples.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_PASSWORD = process.env["DASHBOARD_PASSWORD"] || "";
 const DASHBOARD_AUTH_DISABLED = process.env["NODE_ENV"] === "development" || process.env["DASHBOARD_DISABLE_AUTH"] === "true";
@@ -179,11 +180,13 @@ export async function startWebServer(discordClient) {
                     username: member.user.username,
                     displayName: member.displayName,
                     avatarUrl: member.user.displayAvatarURL({ extension: "png", size: 64 }),
+                    templeKey: resolveTempleKeyForMember(member),
                 });
         });
         res.json({
             days: activity.days,
             users: activity.users.map((user) => ({ ...user, ...names.get(user.userId) })),
+            temples: TEMPLE_DEFINITIONS.map((def) => ({ key: def.key, displayName: def.displayName })),
         });
     });
     /* ===== Helpers config ===== */

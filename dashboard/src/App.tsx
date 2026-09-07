@@ -2018,6 +2018,7 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
     const [range, setRange] = useState<7 | 30 | 90 | 360>(30);
     const [userSearch, setUserSearch] = useState("");
     const [hiddenUsers, setHiddenUsers] = useState<Set<string>>(new Set());
+    const [templeFilter, setTempleFilter] = useState<string>("all");
     const allDays = activity?.days ?? [];
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
@@ -2029,6 +2030,7 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
         return daysByDate.get(dateKey) ?? { date: dateKey, messages: {}, voiceSeconds: {} };
     });
     const memberNames = new Map(members.map((member) => [member.id, member.displayName || member.username]));
+    const temples = activity?.temples ?? [];
     const users = [...(activity?.users ?? [])].map((user) => ({
         ...user,
         name: memberNames.get(user.userId) || `Utente ${user.userId.slice(-6)}`,
@@ -2048,6 +2050,7 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
     }
     const periodUsers = users.map((user) => ({ ...user, ...(totals.get(user.userId) || { messages: 0, voiceSeconds: 0 }) }))
         .filter((user) => user.messages > 0 || user.voiceSeconds > 0)
+        .filter((user) => templeFilter === "all" || user.templeKey === templeFilter)
         .sort((a, b) => (b.messages + b.voiceSeconds / 3600) - (a.messages + a.voiceSeconds / 3600));
     const totalMessages = periodUsers.reduce((sum, user) => sum + user.messages, 0);
     const totalVoiceHours = periodUsers.reduce((sum, user) => sum + user.voiceSeconds, 0) / 3600;
@@ -2092,6 +2095,20 @@ const ActivityChart: React.FC<{ activity: GuildActivityDto | null; members: Disc
                 </div>
                 <button onClick={() => setHiddenUsers(new Set())} className="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-300">Mostra tutti</button>
             </div>
+
+            {temples.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] uppercase tracking-[0.15em] text-neutral-600 mr-1">Tempio</span>
+                    <button onClick={() => setTempleFilter("all")} className={classNames("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", templeFilter === "all" ? "bg-[#C9A227] text-[#1a1410]" : "bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-neutral-100")}>
+                        Tutti
+                    </button>
+                    {temples.map((temple) => (
+                        <button key={temple.key} onClick={() => setTempleFilter(temple.key)} className={classNames("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", templeFilter === temple.key ? "bg-[#C9A227] text-[#1a1410]" : "bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-neutral-100")}>
+                            {temple.displayName}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3 md:max-w-lg">
                 <Stat label="Messaggi nel periodo" value={totalMessages.toLocaleString("it-IT")} color="amber" />

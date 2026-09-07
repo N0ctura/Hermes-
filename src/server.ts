@@ -27,6 +27,7 @@ import { refreshBirthdayListMessage } from "./utils/birthday-list.js";
 import { fetchClanById, fetchClanMembers, fetchClanLog, fetchClanLedger } from "./utils/wolvesville.js";
 import { getGuildActivity } from "./utils/activity-tracker.js";
 import { defaultTempleOnboardingConfig, getTemplePopulationSnapshot } from "./utils/temple-onboarding.js";
+import { TEMPLE_DEFINITIONS, resolveTempleKeyForMember } from "./utils/temples.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -199,17 +200,19 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     if (!guild) return res.status(404).json({ error: "Guild non trovata" });
     const activity = getGuildActivity(req.params.id);
     const members = await guild.members.fetch().catch(() => null);
-    const names = new Map<string, { username: string; displayName: string; avatarUrl: string }>();
+    const names = new Map<string, { username: string; displayName: string; avatarUrl: string; templeKey: string | null }>();
     members?.forEach((member) => {
       if (!member.user.bot) names.set(member.id, {
         username: member.user.username,
         displayName: member.displayName,
         avatarUrl: member.user.displayAvatarURL({ extension: "png", size: 64 }),
+        templeKey: resolveTempleKeyForMember(member),
       });
     });
     res.json({
       days: activity.days,
       users: activity.users.map((user) => ({ ...user, ...names.get(user.userId) })),
+      temples: TEMPLE_DEFINITIONS.map((def) => ({ key: def.key, displayName: def.displayName })),
     });
   });
 
