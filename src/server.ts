@@ -28,6 +28,47 @@ import { fetchClanById, fetchClanMembers, fetchClanLog, fetchClanLedger } from "
 import { getGuildActivity } from "./utils/activity-tracker.js";
 import { defaultTempleOnboardingConfig, getTemplePopulationSnapshot } from "./utils/temple-onboarding.js";
 import { TEMPLE_DEFINITIONS, resolveTempleKeyForMember } from "./utils/temples.js";
+import type { Guild, GuildMember, Collection } from "discord.js";
+
+/**
+ * Cache in memoria dei membri di ogni guild, per evitare di rifare una
+ * fetch completa a Discord (guild.members.fetch()) ad ogni singola
+ * richiesta dashboard. La dashboard interroga /activity ogni 20s e anche
+ * /members allo stesso tempo: senza cache erano due fetch complete ogni
+ * ~20 secondi, che su server con tanti membri diventano il vero collo di
+ * bottiglia (percepito come lentezza generale della dashboard).
+ *
+ * TTL breve (15s): i nomi/ruoli restano comunque aggiornati quasi in
+ * tempo reale, ma la fetch pesante a Discord parte al massimo una volta
+ * ogni 15s per guild, condivisa fra tutti gli endpoint che ne hanno bisogno.
+ */
+const MEMBERS_CACHE_TTL_MS = 15_000;
+const membersCache = new Map<string, { fetchedAt: number; members: Collection<string, GuildMember> }>();
+const membersFetchInFlight = new Map<string, Promise<Collection<string, GuildMember> | null>>();
+
+async function getGuildMembersCached(guild: Guild): Promise<Collection<string, GuildMember> | null> {
+  const cached = membersCache.get(guild.id);
+  if (cached && Date.now() - cached.fetchedAt < MEMBERS_CACHE_TTL_MS) {
+    return cached.members;
+  }
+
+  const inFlight = membersFetchInFlight.get(guild.id);
+  if (inFlight) return inFlight;
+
+  const promise = guild.members
+    .fetch()
+    .then((members) => {
+      membersCache.set(guild.id, { fetchedAt: Date.now(), members });
+      return members;
+    })
+    .catch(() => cached?.members ?? null)
+    .finally(() => {
+      membersFetchInFlight.delete(guild.id);
+    });
+
+  membersFetchInFlight.set(guild.id, promise);
+  return promise;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -177,7 +218,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     try {
       const guild = discordClient.guilds.cache.get(req.params.id);
       if (!guild) return res.status(404).json({ error: "Guild non trovata" });
-      const members = await guild.members.fetch().catch(() => null);
+      const members = await getGuildMembersCached(guild);
       const out: Array<{ id: string; username: string; displayName: string; avatarUrl: string }> = [];
       members?.forEach((m) => {
         if (m.user.bot) return;
@@ -199,7 +240,7 @@ export async function startWebServer(discordClient: Client): Promise<{ port: num
     const guild = discordClient.guilds.cache.get(req.params.id);
     if (!guild) return res.status(404).json({ error: "Guild non trovata" });
     const activity = getGuildActivity(req.params.id);
-    const members = await guild.members.fetch().catch(() => null);
+    const members = await getGuildMembersCached(guild);
     const names = new Map<string, { username: string; displayName: string; avatarUrl: string; templeKey: string | null }>();
     members?.forEach((member) => {
       if (!member.user.bot) names.set(member.id, {
