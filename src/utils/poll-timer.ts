@@ -286,10 +286,10 @@ async function sendTempleSummaries(
     }
 
     const embed = new EmbedBuilder()
-      .setTitle("🏁 I sondaggi sono chiusi!")
+      .setTitle("Sondaggi chiusi")
       .setDescription(
         `${resultText}\n\n` +
-        `💬 **Questa è la missione che ha vinto il sondaggio — chi partecipa?**`
+        `**Lista dei voti:**`
       )
       .setColor(EMBED_COLOR)
       .setTimestamp()
@@ -322,7 +322,7 @@ async function sendTempleSummaries(
     } else {
       embed.addFields({
         name: "🎉 Tutti hanno votato!",
-        value: "Ottimo lavoro al clan! 💪",
+        value: "Complimenti al tempio!💪",
         inline: false,
       });
     }

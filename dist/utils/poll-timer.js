@@ -261,9 +261,9 @@ async function sendTempleSummaries(guild, voterMap, pollChannelId, resultText, w
                 notVoted.push(member.displayName);
         }
         const embed = new EmbedBuilder()
-            .setTitle("🏁 I sondaggi sono chiusi!")
+            .setTitle("Sondaggi chiusi")
             .setDescription(`${resultText}\n\n` +
-            `💬 **Questa è la missione che ha vinto il sondaggio — chi partecipa?**`)
+            `**Lista dei voti:**`)
             .setColor(EMBED_COLOR)
             .setTimestamp()
             .setFooter({ text: role.name });
@@ -293,7 +293,7 @@ async function sendTempleSummaries(guild, voterMap, pollChannelId, resultText, w
         else {
             embed.addFields({
                 name: "🎉 Tutti hanno votato!",
-                value: "Ottimo lavoro al clan! 💪",
+                value: "Complimenti al tempio!💪",
                 inline: false,
             });
         }
