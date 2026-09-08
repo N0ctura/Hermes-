@@ -15,15 +15,19 @@ import {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   MessageFlags,
-  type TextChannel,
+  type Guild,
 } from "discord.js";
 import { logger } from "../utils/logger.js";
-import { loadConfig, saveConfig, DEFAULT_MESSAGES, type BotMessages } from "../utils/storage.js";
+import { loadConfig, saveConfig, DEFAULT_MESSAGES, type BotConfig, type BotMessages } from "../utils/storage.js";
 
 export const data = new SlashCommandBuilder()
   .setName("impostazioni")
   .setDescription("Configura il bot: canale sondaggi, notifiche, durata, ruoli e messaggi")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+
+const COLOR = 0x8b0000;
+const IDLE_MS = 180_000; // 3 minuti di inattività
+const MAX_TOTAL_MS = 900_000; // 15 minuti di sessione massima, come rete di sicurezza
 
 const DURATION_OPTIONS = [
   { label: "12 ore", value: "12" },
@@ -38,253 +42,215 @@ const DURATION_OPTIONS = [
 ];
 
 const MESSAGE_KEYS: Array<{ key: keyof BotMessages; label: string; emoji: string; hint: string }> = [
-  {
-    key: "missioneVinta",
-    label: "Missione vinta",
-    emoji: "🏆",
-    hint: "Variabile: {missione}",
-  },
-  {
-    key: "pareggio",
-    label: "Pareggio",
-    emoji: "⚖️",
-    hint: "Variabile: {missioni}",
-  },
-  {
-    key: "nessunVoto",
-    label: "Nessun voto",
-    emoji: "🗳️",
-    hint: "Nessuna variabile disponibile",
-  },
-  {
-    key: "rimescolo",
-    label: "Rimescolo",
-    emoji: "🔀",
-    hint: "Nessuna variabile disponibile",
-  },
+  { key: "missioneVinta", label: "Missione vinta", emoji: "🏆", hint: "Variabile: {missione}" },
+  { key: "pareggio", label: "Pareggio", emoji: "⚖️", hint: "Variabile: {missioni}" },
+  { key: "nessunVoto", label: "Nessun voto", emoji: "🗳️", hint: "Nessuna variabile disponibile" },
+  { key: "rimescolo", label: "Rimescolo", emoji: "🔀", hint: "Nessuna variabile disponibile" },
 ];
+
+const MAIN_SECTIONS = [
+  { value: "poll_channel", label: "Canale sondaggi", emoji: "📊" },
+  { value: "notify_channels", label: "Canali notifica", emoji: "🔔" },
+  { value: "duration", label: "Durata sondaggio", emoji: "⏱️" },
+  { value: "ping_role", label: "Ruolo da pingare", emoji: "🔔" },
+  { value: "pilgrim_role", label: "Ruolo pellegrini", emoji: "🚶" },
+  { value: "messages", label: "Messaggi", emoji: "💬" },
+];
+
+function backRow(customId = "menu_back"): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(customId).setLabel("⬅️ Indietro").setStyle(ButtonStyle.Secondary)
+  );
+}
+
+function summarize(config: BotConfig, guild: Guild): string {
+  const validNotifyChannelIds = (config.notifyChannelIds ?? []).filter((id) => guild.channels.cache.has(id));
+  const validPollChannelId = config.pollChannelId && guild.channels.cache.has(config.pollChannelId) ? config.pollChannelId : null;
+  const validPingRoleId = config.pingRoleId && guild.roles.cache.has(config.pingRoleId) ? config.pingRoleId : undefined;
+  const validPilgrimRoleId = config.pilgrimRoleId && guild.roles.cache.has(config.pilgrimRoleId) ? config.pilgrimRoleId : undefined;
+  const durLabel = config.pollDurationHours && config.pollDurationHours > 0 ? `${config.pollDurationHours} ore` : "Nessun timer";
+  return [
+    `📊 **Canale sondaggi:** ${validPollChannelId ? `<#${validPollChannelId}>` : "❌ non impostato"}`,
+    `🔔 **Canali notifica:** ${validNotifyChannelIds.length > 0 ? validNotifyChannelIds.map((id) => `<#${id}>`).join(", ") : "❌ nessuno"}`,
+    `⏱️ **Durata sondaggio:** ${durLabel}`,
+    `🔔 **Ruolo da pingare:** ${validPingRoleId ? `<@&${validPingRoleId}>` : "❌ non impostato"}`,
+    `🚶 **Ruolo pellegrini:** ${validPilgrimRoleId ? `<@&${validPilgrimRoleId}>` : "❌ non impostato"}`,
+  ].join("\n");
+}
+
+function buildMainMenu(config: BotConfig, guild: Guild): { embeds: EmbedBuilder[]; components: ActionRowBuilder<any>[] } {
+  const embed = new EmbedBuilder()
+    .setTitle("⚙️ Impostazioni Bot Wolvesville")
+    .setDescription(`**Configurazione attuale:**\n${summarize(config, guild)}\n\nScegli cosa modificare dal menu qui sotto.`)
+    .setColor(COLOR)
+    .setFooter({ text: "Solo gli admin possono usare questo comando · ogni modifica si salva subito" });
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId("menu_main")
+    .setPlaceholder("Cosa vuoi modificare?")
+    .addOptions(
+      MAIN_SECTIONS.map((s) => new StringSelectMenuOptionBuilder().setLabel(s.label).setValue(s.value).setEmoji(s.emoji))
+    );
+
+  const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId("menu_close").setLabel("✅ Chiudi").setStyle(ButtonStyle.Success)
+  );
+
+  return { embeds: [embed], components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select), closeRow] };
+}
+
+function buildPollChannelScreen(config: BotConfig) {
+  const embed = new EmbedBuilder()
+    .setTitle("📊 Canale sondaggi")
+    .setDescription("Scegli il canale dove appariranno i sondaggi.")
+    .setColor(COLOR);
+  const select = new ChannelSelectMenuBuilder()
+    .setCustomId("select_poll_channel")
+    .setPlaceholder("Scegli il canale…")
+    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+  if (config.pollChannelId) select.setDefaultChannels(config.pollChannelId);
+  return { embeds: [embed], components: [new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select), backRow()] };
+}
+
+function buildNotifyChannelsScreen(config: BotConfig) {
+  const embed = new EmbedBuilder()
+    .setTitle("🔔 Canali notifica")
+    .setDescription("Scegli i canali dove mandare la notifica quando escono nuovi sondaggi. Puoi selezionarne più d'uno.")
+    .setColor(COLOR);
+  const select = new ChannelSelectMenuBuilder()
+    .setCustomId("select_notify_channels")
+    .setPlaceholder("Scegli i canali… (max 10)")
+    .setMinValues(1)
+    .setMaxValues(10)
+    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+  if (config.notifyChannelIds?.length) select.setDefaultChannels(...config.notifyChannelIds.slice(0, 10));
+  return { embeds: [embed], components: [new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select), backRow()] };
+}
+
+function buildDurationScreen(config: BotConfig) {
+  const embed = new EmbedBuilder()
+    .setTitle("⏱️ Durata sondaggio")
+    .setDescription("Per quanto tempo deve restare aperto il sondaggio prima di chiudersi automaticamente?\nScegli **Nessun timer** per disabilitare la chiusura automatica.")
+    .setColor(COLOR);
+  const currentValue = String(config.pollDurationHours ?? 0);
+  const select = new StringSelectMenuBuilder()
+    .setCustomId("select_duration")
+    .setPlaceholder("Scegli la durata…")
+    .addOptions(
+      DURATION_OPTIONS.map((o) =>
+        new StringSelectMenuOptionBuilder().setLabel(o.label).setValue(o.value).setDefault(o.value === currentValue)
+      )
+    );
+  return { embeds: [embed], components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select), backRow()] };
+}
+
+function buildPingRoleScreen(config: BotConfig) {
+  const embed = new EmbedBuilder()
+    .setTitle("🔔 Ruolo da pingare")
+    .setDescription("Quale ruolo deve essere menzionato quando i sondaggi si chiudono?")
+    .setColor(COLOR);
+  const select = new RoleSelectMenuBuilder().setCustomId("select_role").setPlaceholder("Scegli il ruolo…");
+  if (config.pingRoleId) select.setDefaultRoles(config.pingRoleId);
+  return { embeds: [embed], components: [new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select), backRow()] };
+}
+
+function buildPilgrimRoleScreen(config: BotConfig) {
+  const embed = new EmbedBuilder()
+    .setTitle("🚶 Ruolo pellegrini")
+    .setDescription("Quale ruolo identifica i pellegrini/ospiti nel server?")
+    .setColor(COLOR);
+  const select = new RoleSelectMenuBuilder().setCustomId("select_pilgrim_role").setPlaceholder("Scegli il ruolo…");
+  if (config.pilgrimRoleId) select.setDefaultRoles(config.pilgrimRoleId);
+  return { embeds: [embed], components: [new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select), backRow()] };
+}
+
+function buildMessagesScreen(config: BotConfig) {
+  const msgs = { ...DEFAULT_MESSAGES, ...config.messages };
+  const lines = MESSAGE_KEYS.map((m) => {
+    const isCustom = config.messages?.[m.key] !== undefined;
+    const text = msgs[m.key];
+    return `${m.emoji} **${m.label}**${isCustom ? " *(personalizzato)*" : " *(default)*"}\n> ${text.slice(0, 100)}${text.length > 100 ? "…" : ""}`;
+  });
+  const embed = new EmbedBuilder()
+    .setTitle("💬 Messaggi")
+    .setDescription(
+      "Personalizza i messaggi che il bot invia.\n\n" +
+        lines.join("\n\n") +
+        "\n\n✏️ per modificare, ♻️ per tornare al testo di default."
+    )
+    .setColor(COLOR);
+
+  const rows = MESSAGE_KEYS.map((m) =>
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`msgedit_${m.key}`).setLabel(`Modifica ${m.label}`).setEmoji("✏️").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`msgreset_${m.key}`)
+        .setLabel("Ripristina default")
+        .setEmoji("♻️")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(config.messages?.[m.key] === undefined)
+    )
+  );
+
+  return { embeds: [embed], components: [...rows, backRow("menu_back_from_messages")] };
+}
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   try {
     const guild = interaction.guild;
     if (!guild) {
-      await interaction.reply({ content: "❌ Questo comando funziona solo in un server.", ephemeral: true });
+      await interaction.reply({ content: "❌ Questo comando funziona solo in un server.", flags: MessageFlags.Ephemeral });
       return;
     }
 
-    const config = loadConfig();
+    let config = loadConfig();
 
-    const showCurrentConfig = () => {
-      const validNotifyChannelIds = (config.notifyChannelIds ?? []).filter((channelId) => guild.channels.cache.has(channelId));
-      const validPollChannelId = config.pollChannelId && guild.channels.cache.has(config.pollChannelId)
-        ? config.pollChannelId
-        : null;
-      const validPingRoleId = config.pingRoleId && guild.roles.cache.has(config.pingRoleId)
-        ? config.pingRoleId
-        : undefined;
-      const validPilgrimRoleId = config.pilgrimRoleId && guild.roles.cache.has(config.pilgrimRoleId)
-        ? config.pilgrimRoleId
-        : undefined;
-      const durLabel =
-        config.pollDurationHours && config.pollDurationHours > 0
-          ? `${config.pollDurationHours} ore`
-          : "Nessun timer";
-      const pollChannelMention = validPollChannelId ? `<#${validPollChannelId}>` : "❌ non impostato";
-      const notifyChannelsMention = validNotifyChannelIds.length > 0
-        ? validNotifyChannelIds.map(id => `<#${id}>`).join(", ")
-        : "❌ nessuno";
-      const pingRoleMention = validPingRoleId ? `<@&${validPingRoleId}>` : "❌ non impostato";
-      const pilgrimRoleMention = validPilgrimRoleId ? `<@&${validPilgrimRoleId}>` : "❌ non impostato";
-      return [
-        `📊 **Canale sondaggi:** ${pollChannelMention}`,
-        `🔔 **Canali notifica:** ${notifyChannelsMention}`,
-        `⏱️ **Durata sondaggio:** ${durLabel}`,
-        `🔔 **Ruolo da pingare:** ${pingRoleMention}`,
-        `🚶 **Ruolo pellegrini:** ${pilgrimRoleMention}`,
-      ].join("\n");
-    };
-
-    const pollSelectRow = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId("select_poll_channel")
-        .setPlaceholder("Scegli il canale per i sondaggi…")
-        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-    );
-
-    const notifySelectRow = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId("select_notify_channels")
-        .setPlaceholder("Scegli i canali per le notifiche… (max 10)")
-        .setMinValues(1)
-        .setMaxValues(10)
-        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-    );
-
-    const durationSelectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId("select_duration")
-        .setPlaceholder("Scegli la durata del sondaggio…")
-        .addOptions(
-          DURATION_OPTIONS.map((o) =>
-            new StringSelectMenuOptionBuilder().setLabel(o.label).setValue(o.value)
-          )
-        )
-    );
-
-    const roleSelectRow = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
-      new RoleSelectMenuBuilder()
-        .setCustomId("select_role")
-        .setPlaceholder("Scegli il ruolo da pingare alla chiusura…")
-    );
-
-    const pilgrimRoleSelectRow = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
-      new RoleSelectMenuBuilder()
-        .setCustomId("select_pilgrim_role")
-        .setPlaceholder("Scegli il ruolo usato per i pellegrini…")
-    );
-
-    const buildMessageButtons = () =>
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        ...MESSAGE_KEYS.map((m) =>
-          new ButtonBuilder()
-            .setCustomId(`msg_${m.key}`)
-            .setLabel(`${m.emoji} ${m.label}`)
-            .setStyle(ButtonStyle.Secondary)
-        ),
-        new ButtonBuilder()
-          .setCustomId("msg_done")
-          .setLabel("✅ Fine")
-          .setStyle(ButtonStyle.Success)
-      );
-
-    const buildStep6Embed = () => {
-      const msgs = { ...DEFAULT_MESSAGES, ...config.messages };
-      const lines = MESSAGE_KEYS.map(
-        (m) => `${m.emoji} **${m.label}:**\n> ${msgs[m.key].slice(0, 100)}${msgs[m.key].length > 100 ? "…" : ""}`
-      );
-      return new EmbedBuilder()
-        .setTitle("⚙️ Impostazioni — Passo 6/6: Messaggi")
-        .setDescription(
-          "Personalizza i messaggi che il bot invia.\n\n" +
-          lines.join("\n\n") +
-          "\n\nClicca un pulsante per modificare il testo. Premi **Fine** quando hai finito."
-        )
-        .setColor(0x8b0000);
-    };
-
-    const embed = new EmbedBuilder()
-      .setTitle("⚙️ Impostazioni Bot Wolvesville")
-      .setDescription(
-        `**Configurazione attuale:**\n${showCurrentConfig()}\n\n` +
-        "**Passo 1/6:** Scegli il canale dove appariranno i sondaggi.\n\n" +
-        "⏳ Hai 2 minuti per completare ogni passaggio."
-      )
-      .setColor(0x8b0000)
-      .setFooter({ text: "Solo gli admin possono usare questo comando" });
-
-    await interaction.reply({ embeds: [embed], components: [pollSelectRow], flags: MessageFlags.Ephemeral });
-
-    let step = 1;
+    const mainMenu = buildMainMenu(config, guild);
+    await interaction.reply({ ...mainMenu, flags: MessageFlags.Ephemeral });
 
     const reply = await interaction.fetchReply();
     const collector = reply.createMessageComponentCollector({
       filter: (i) => i.user.id === interaction.user.id,
-      time: 300_000,
+      idle: IDLE_MS,
+      time: MAX_TOTAL_MS,
     });
+
+    let screen: "main" | "messages" = "main";
 
     collector.on("collect", async (i) => {
       try {
-      if (i.isChannelSelectMenu()) {
-        if (i.customId === "select_poll_channel" && step === 1) {
-          config.pollChannelId = i.values[0] ?? null;
-          step = 2;
-          const pollChannelMention = config.pollChannelId ? `<#${config.pollChannelId}>` : "";
-          await i.update({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle("⚙️ Impostazioni — Passo 2/6")
-                .setDescription(
-                  `✅ Canale sondaggi: ${pollChannelMention}\n\n` +
-                  "Scegli i canali dove mandare la notifica quando escono nuovi sondaggi.\n" +
-                  "Puoi selezionarne più d'uno."
-                )
-                .setColor(0x8b0000),
-            ],
-            components: [notifySelectRow],
-          });
+        config = loadConfig(); // ricarica per evitare di sovrascrivere modifiche fatte altrove nel frattempo
 
-        } else if (i.customId === "select_notify_channels" && step === 2) {
-          config.notifyChannelIds = i.values;
-          step = 3;
-          const notifyChannelsMention = config.notifyChannelIds.map(id => `<#${id}>`).join(", ");
-          await i.update({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle("⚙️ Impostazioni — Passo 3/6")
-                .setDescription(
-                  `✅ Canali notifica: **${notifyChannelsMention}**\n\n` +
-                  "Per quanto tempo deve restare aperto il sondaggio prima di chiudersi automaticamente?\n" +
-                  "Scegli **Nessun timer** per disabilitare la chiusura automatica."
-                )
-                .setColor(0x8b0000),
-            ],
-            components: [durationSelectRow],
-          });
-        }
-      } else if (i.isRoleSelectMenu()) {
-        if (i.customId === "select_role" && step === 4) {
-          config.pingRoleId = i.values[0];
-          step = 5;
-          const pingRoleMention = config.pingRoleId ? `<@&${config.pingRoleId}>` : "";
-          await i.update({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle("⚙️ Impostazioni — Passo 5/6")
-                .setDescription(
-                  `✅ Ruolo da pingare: ${pingRoleMention}\n\n` +
-                  "Quale ruolo identifica i pellegrini/ospiti nel server?"
-                )
-                .setColor(0x8b0000),
-            ],
-            components: [pilgrimRoleSelectRow],
-          });
-        } else if (i.customId === "select_pilgrim_role" && step === 5) {
-          config.pilgrimRoleId = i.values[0];
-          step = 6;
-          saveConfig(config);
-          await i.update({ embeds: [buildStep6Embed()], components: [buildMessageButtons()] });
-        }
-      } else if (i.isStringSelectMenu()) {
-        if (i.customId === "select_duration" && step === 3) {
-          config.pollDurationHours = parseInt(i.values[0] ?? "0", 10);
-          step = 4;
-
-          const durLabel = config.pollDurationHours > 0 ? `${config.pollDurationHours} ore` : "Nessun timer";
-          await i.update({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle("⚙️ Impostazioni — Passo 4/6")
-                .setDescription(
-                  `✅ Durata sondaggio: **${durLabel}**\n\n` +
-                  "Quale ruolo deve essere menzionato quando i sondaggi si chiudono?"
-                )
-                .setColor(0x8b0000),
-            ],
-            components: [roleSelectRow],
-          });
+        // ---- Menu principale (select) ----
+        if (i.isStringSelectMenu() && i.customId === "menu_main") {
+          const section = i.values[0];
+          screen = section === "messages" ? "messages" : "main";
+          const screenData =
+            section === "poll_channel" ? buildPollChannelScreen(config)
+            : section === "notify_channels" ? buildNotifyChannelsScreen(config)
+            : section === "duration" ? buildDurationScreen(config)
+            : section === "ping_role" ? buildPingRoleScreen(config)
+            : section === "pilgrim_role" ? buildPilgrimRoleScreen(config)
+            : buildMessagesScreen(config);
+          await i.update(screenData);
+          return;
         }
 
-      } else if (i.isButton() && step === 6) {
-        if (i.customId === "msg_done") {
+        // ---- Torna al menu principale ----
+        if (i.isButton() && (i.customId === "menu_back" || i.customId === "menu_back_from_messages")) {
+          screen = "main";
+          await i.update(buildMainMenu(config, guild));
+          return;
+        }
+
+        // ---- Chiudi ----
+        if (i.isButton() && i.customId === "menu_close") {
           collector.stop("done");
           await i.update({
             embeds: [
               new EmbedBuilder()
-                .setTitle("✅ Impostazioni salvate!")
-                .setDescription(
-                  `**Configurazione aggiornata:**\n${showCurrentConfig()}\n\n` +
-                  "Il bot è pronto! Usa `/sondaggio` per creare un nuovo sondaggio missione."
-                )
+                .setTitle("✅ Impostazioni chiuse")
+                .setDescription(`**Configurazione attuale:**\n${summarize(config, guild)}\n\nUsa \`/impostazioni\` in qualsiasi momento per modificarle di nuovo.`)
                 .setColor(0x00aa44),
             ],
             components: [],
@@ -292,72 +258,114 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
           return;
         }
 
-        const msgKey = i.customId.replace("msg_", "") as keyof BotMessages;
-        const msgMeta = MESSAGE_KEYS.find((m) => m.key === msgKey);
-        if (!msgMeta) return;
-
-        const currentText = config.messages?.[msgKey] ?? DEFAULT_MESSAGES[msgKey];
-
-        const modal = new ModalBuilder()
-          .setCustomId(`modal_${msgKey}`)
-          .setTitle(`${msgMeta.emoji} ${msgMeta.label}`);
-
-        const textInput = new TextInputBuilder()
-          .setCustomId("message_text")
-          .setLabel(msgMeta.hint)
-          .setStyle(TextInputStyle.Paragraph)
-          .setValue(currentText)
-          .setMaxLength(500)
-          .setRequired(true);
-
-        modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(textInput));
-
-        await i.showModal(modal);
-
-        try {
-          const submitted = await i.awaitModalSubmit({
-            filter: (m) => m.user.id === interaction.user.id && m.customId === `modal_${msgKey}`,
-            time: 120_000,
-          });
-
-          const newText = submitted.fields.getTextInputValue("message_text").trim();
-          if (!config.messages) config.messages = {};
-          config.messages[msgKey] = newText;
+        // ---- Canale sondaggi ----
+        if (i.isChannelSelectMenu() && i.customId === "select_poll_channel") {
+          config.pollChannelId = i.values[0] ?? null;
           saveConfig(config);
-
-          await (submitted as any).update({ embeds: [buildStep6Embed()], components: [buildMessageButtons()] });
-        } catch {
-          try { await interaction.editReply({ embeds: [buildStep6Embed()], components: [buildMessageButtons()] }); } catch { /* ignorato */ }
+          await i.update(buildMainMenu(config, guild));
+          return;
         }
-      }
+
+        // ---- Canali notifica ----
+        if (i.isChannelSelectMenu() && i.customId === "select_notify_channels") {
+          config.notifyChannelIds = i.values;
+          saveConfig(config);
+          await i.update(buildMainMenu(config, guild));
+          return;
+        }
+
+        // ---- Durata ----
+        if (i.isStringSelectMenu() && i.customId === "select_duration") {
+          config.pollDurationHours = parseInt(i.values[0] ?? "0", 10);
+          saveConfig(config);
+          await i.update(buildMainMenu(config, guild));
+          return;
+        }
+
+        // ---- Ruolo da pingare ----
+        if (i.isRoleSelectMenu() && i.customId === "select_role") {
+          config.pingRoleId = i.values[0];
+          saveConfig(config);
+          await i.update(buildMainMenu(config, guild));
+          return;
+        }
+
+        // ---- Ruolo pellegrini ----
+        if (i.isRoleSelectMenu() && i.customId === "select_pilgrim_role") {
+          config.pilgrimRoleId = i.values[0];
+          saveConfig(config);
+          await i.update(buildMainMenu(config, guild));
+          return;
+        }
+
+        // ---- Ripristina messaggio al default ----
+        if (i.isButton() && i.customId.startsWith("msgreset_")) {
+          const msgKey = i.customId.replace("msgreset_", "") as keyof BotMessages;
+          if (config.messages && msgKey in config.messages) {
+            delete config.messages[msgKey];
+            saveConfig(config);
+          }
+          screen = "messages";
+          await i.update(buildMessagesScreen(config));
+          return;
+        }
+
+        // ---- Modifica messaggio (apre modal) ----
+        if (i.isButton() && i.customId.startsWith("msgedit_")) {
+          const msgKey = i.customId.replace("msgedit_", "") as keyof BotMessages;
+          const msgMeta = MESSAGE_KEYS.find((m) => m.key === msgKey);
+          if (!msgMeta) return;
+
+          const currentText = config.messages?.[msgKey] ?? DEFAULT_MESSAGES[msgKey];
+          const modal = new ModalBuilder().setCustomId(`modal_${msgKey}`).setTitle(`${msgMeta.emoji} ${msgMeta.label}`);
+          const textInput = new TextInputBuilder()
+            .setCustomId("message_text")
+            .setLabel(msgMeta.hint)
+            .setStyle(TextInputStyle.Paragraph)
+            .setValue(currentText)
+            .setMaxLength(500)
+            .setRequired(true);
+          modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(textInput));
+          await i.showModal(modal);
+
+          try {
+            const submitted = await i.awaitModalSubmit({
+              filter: (m) => m.user.id === interaction.user.id && m.customId === `modal_${msgKey}`,
+              time: 120_000,
+            });
+            const newText = submitted.fields.getTextInputValue("message_text").trim();
+            config = loadConfig();
+            if (!config.messages) config.messages = {};
+            config.messages[msgKey] = newText;
+            saveConfig(config);
+            screen = "messages";
+            if (submitted.isFromMessage()) {
+              await submitted.update(buildMessagesScreen(config));
+            } else {
+              await interaction.editReply(buildMessagesScreen(config));
+            }
+          } catch {
+            // Timeout della modal (nessun testo inviato): non facciamo nulla,
+            // il pannello messaggi resta quello di prima al prossimo aggiornamento.
+          }
+          return;
+        }
       } catch (err: any) {
-        logger.warn({ err, step, customId: i.customId }, "Errore durante collect impostazioni");
+        logger.warn({ err, screen, customId: i.customId }, "Errore durante collect impostazioni");
         const code = err?.code ?? err?.status ?? 0;
         if (code === 10062) {
           collector.stop("unknown_interaction");
           try {
             await interaction.editReply({
-              embeds: [
-                new EmbedBuilder()
-                  .setTitle("⚠️ Interazione scaduta")
-                  .setDescription("L'interazione non è più valida. Usa `/impostazioni` per ricominciare.")
-                  .setColor(0xffaa00),
-              ],
+              embeds: [new EmbedBuilder().setTitle("⚠️ Interazione scaduta").setDescription("Usa `/impostazioni` per ricominciare.").setColor(0xffaa00)],
               components: [],
             });
           } catch { /* ignorato */ }
         } else {
-          try {
-            await i.deferUpdate({}).catch(() => null);
-          } catch { /* ignorato */ }
+          try { await i.deferUpdate().catch(() => null); } catch { /* ignorato */ }
           try {
             await interaction.editReply({
-              embeds: [
-                new EmbedBuilder()
-                  .setTitle("❌ Errore")
-                  .setDescription("Si è verificato un errore durante la configurazione. Usa `/impostazioni` per ricominciare.")
-                  .setColor(0xed4245),
-              ],
+              embeds: [new EmbedBuilder().setTitle("❌ Errore").setDescription("Si è verificato un errore. Le modifiche già fatte restano salvate. Usa `/impostazioni` per continuare.").setColor(0xed4245)],
               components: [],
             });
             collector.stop("error");
@@ -372,31 +380,22 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
           await interaction.editReply({
             embeds: [
               new EmbedBuilder()
-                .setTitle("⏰ Tempo scaduto")
-                .setDescription("Le impostazioni non sono state salvate completamente. Usa `/impostazioni` per riprovare.")
+                .setTitle("⏰ Sessione scaduta")
+                .setDescription(`Tutte le modifiche fatte finora restano salvate.\n\n**Configurazione attuale:**\n${summarize(config, guild)}\n\nUsa \`/impostazioni\` per continuare a modificare.`)
                 .setColor(0xffaa00),
             ],
             components: [],
           });
-        } catch { /* message might be gone */ }
+        } catch { /* il messaggio potrebbe non esistere più */ }
       }
     });
-
   } catch (error) {
     logger.error({ err: error }, "ERRORE COMANDO /IMPOSTAZIONI");
-    console.error("ERROR IN /IMPOSTAZIONI:", error);
     try {
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: "❌ Si è verificato un errore. Riprova più tardi.",
-          flags: MessageFlags.Ephemeral
-        });
+        await interaction.reply({ content: "❌ Si è verificato un errore. Riprova più tardi.", flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.editReply({
-          content: "❌ Si è verificato un errore. Riprova più tardi.",
-          embeds: [],
-          components: []
-        });
+        await interaction.editReply({ content: "❌ Si è verificato un errore. Riprova più tardi.", embeds: [], components: [] });
       }
     } catch { /* nothing we can do */ }
   }

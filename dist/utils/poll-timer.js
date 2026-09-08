@@ -322,7 +322,7 @@ async function sendTempleSummaries(guild, voterMap, pollChannelId, resultText, w
                 for (let i = 0; i < mentionChunks.length; i++) {
                     try {
                         await templeChannel.send({
-                            content: `🔔 ${i === 0 ? "Chi non ha votato la missione vincente, fatevi sentire!\n" : ""}${mentionChunks[i]}`,
+                            content: `🔔 ${i === 0 ? "Chi non ha votato la missione vincente, partecipate? \n" : ""}${mentionChunks[i]}`,
                             allowedMentions: { users: pingIds },
                         });
                     }
