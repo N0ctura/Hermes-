@@ -45,10 +45,10 @@ function createDatabasePool() {
     });
 }
 export const DEFAULT_MESSAGES = {
-    missioneVinta: 'La missione di questa settimana è **"{missione}"** — se non lo avete già fatto potete andare a comunicare la vostra partecipazione nel tempio! 🏛️',
+    missioneVinta: 'La missione di questa settimana è **"{missione}"** 🏛️',
     nessunVoto: "Non ci sono voti registrati — decidete insieme al clan quale missione fare!",
-    pareggio: "**Pareggio!** Le missioni {missioni} hanno la stessa quantità di voti — decidete insieme al clan quale fare! 🤝",
-    rimescolo: "🔀 **Le missioni sono state rimescolate!** Nuove missioni disponibili nel canale sondaggi.",
+    pareggio: "**Pareggio!** Le missioni {missioni} hanno la stessa quantità di voti, siamo in attesa di un Co Capo",
+    rimescolo: "🔀 **Le missioni sono state rimescolate!**",
 };
 export const DEFAULT_THRESHOLD_TIERS = [
     { name: "Semidio", xpRequired: 6_000_000, roleIds: ["1218697126926749737", "1218900052588630026", "1218900180628279326", "1218900125775302696"] },

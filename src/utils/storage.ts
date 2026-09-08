@@ -70,13 +70,13 @@ export interface BotMessages {
 
 export const DEFAULT_MESSAGES: BotMessages = {
   missioneVinta:
-    'La missione di questa settimana è **"{missione}"** — se non lo avete già fatto potete andare a comunicare la vostra partecipazione nel tempio! 🏛️',
+    'La missione di questa settimana è **"{missione}"** 🏛️',
   nessunVoto:
     "Non ci sono voti registrati — decidete insieme al clan quale missione fare!",
   pareggio:
-    "**Pareggio!** Le missioni {missioni} hanno la stessa quantità di voti — decidete insieme al clan quale fare! 🤝",
+    "**Pareggio!** Le missioni {missioni} hanno la stessa quantità di voti, siamo in attesa di un Co Capo",
   rimescolo:
-    "🔀 **Le missioni sono state rimescolate!** Nuove missioni disponibili nel canale sondaggi.",
+    "🔀 **Le missioni sono state rimescolate!**",
 };
 
 export interface ThresholdTier {

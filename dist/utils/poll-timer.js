@@ -179,7 +179,25 @@ function splitFieldValue(lines, maxLen = EMBED_FIELD_MAX) {
         chunks.push(current);
     return chunks.length > 0 ? chunks : ["—"];
 }
-async function sendTempleSummaries(guild, voterMap, pollChannelId, resultText, winnerImageUrl, extraFiles) {
+function chunkMentions(ids, maxLen = 1800) {
+    const chunks = [];
+    let current = "";
+    for (const id of ids) {
+        const mention = `<@${id}>`;
+        if (current.length + mention.length + 1 > maxLen) {
+            if (current)
+                chunks.push(current);
+            current = mention;
+        }
+        else {
+            current += (current ? " " : "") + mention;
+        }
+    }
+    if (current)
+        chunks.push(current);
+    return chunks;
+}
+async function sendTempleSummaries(guild, voterMap, pollChannelId, resultText, winnerImageUrl, extraFiles, winningLabel) {
     logger.info("Avvio riepilogo templi...");
     // Ciclo di Retry con Backoff per il fetch dei membri (evita il blocco GatewayRateLimitError)
     let membersFetched = false;
@@ -289,6 +307,31 @@ async function sendTempleSummaries(guild, voterMap, pollChannelId, resultText, w
         catch (err) {
             logger.warn({ err, role: role.name, channel: templeChannel.name }, "Impossibile inviare riepilogo nel canale tempio — controlla i permessi del bot");
         }
+        // Ping vero (fuori dall'embed, altrimenti Discord non notifica nessuno):
+        // tutti quelli che NON hanno votato la missione vincente, incluso chi
+        // non ha votato affatto. Solo se c'è un vincitore netto (niente ping
+        // in caso di pareggio o nessun voto: non c'è un'opzione "sbagliata" chiara).
+        if (winningLabel) {
+            const pingIds = [];
+            for (const [memberId] of role.members) {
+                if (voterMap.get(memberId) !== winningLabel)
+                    pingIds.push(memberId);
+            }
+            if (pingIds.length > 0) {
+                const mentionChunks = chunkMentions(pingIds);
+                for (let i = 0; i < mentionChunks.length; i++) {
+                    try {
+                        await templeChannel.send({
+                            content: `🔔 ${i === 0 ? "Chi non ha votato la missione vincente, fatevi sentire!\n" : ""}${mentionChunks[i]}`,
+                            allowedMentions: { users: pingIds },
+                        });
+                    }
+                    catch (err) {
+                        logger.warn({ err, role: role.name, channel: templeChannel.name }, "Impossibile inviare il ping ai non votanti");
+                    }
+                }
+            }
+        }
     }
     if (matchCount === 0) {
         logger.warn("Nessun match ruolo↔canale trovato. Usa /debug-templi per diagnosticare.");
@@ -320,6 +363,10 @@ export async function closePoll(client) {
         let winnerImageUrl;
         let tieMissions;
         const wasRimescolo = winners.length === 1 && winners[0] === RIMESCOLO_IDX;
+        /** Etichetta esatta salvata in voterMap per la scelta vincente — usata per il ping
+         *  automatico di chi non ha votato quella scelta. Resta undefined in caso di
+         *  pareggio o nessun voto: non c'è un'opzione "giusta" chiara da confrontare. */
+        let winningLabel;
         logger.info({ winners, wasRimescolo, questImageUrls: poll.questImageUrls }, "Dettagli vincitore");
         if (winners.length === 0) {
             resultText = messages.nessunVoto;
@@ -337,6 +384,7 @@ export async function closePoll(client) {
             if (hasImg) {
                 winnerImageUrl = getRimescoloAttachmentUrl();
             }
+            winningLabel = "🔀 Rimescolo";
         }
         else if (winners.length > 1) {
             const tiedLabels = winners
@@ -362,6 +410,7 @@ export async function closePoll(client) {
             const winnerLabel = poll.questLabels[winnerIdx] ?? `Missione ${winnerIdx + 1}`;
             resultText = applyTemplate(messages.missioneVinta, { missione: winnerLabel });
             winnerImageUrl = poll.questImageUrls?.[winnerIdx];
+            winningLabel = winnerLabel;
             logger.info({ winnerIdx, winnerImageUrl }, "URL immagine vincitore");
         }
         const rimescoloAttachment = wasRimescolo ? buildRimescoloAttachment() : null;
@@ -418,7 +467,7 @@ export async function closePoll(client) {
                 files: extraFiles.length ? extraFiles : undefined,
                 allowedMentions: { roles: roleId ? [roleId] : [] },
             });
-            await sendTempleSummaries(guild, voterMap, poll.channelId, resultText, winnerImageUrl, extraFiles);
+            await sendTempleSummaries(guild, voterMap, poll.channelId, resultText, winnerImageUrl, extraFiles, winningLabel);
         }
         config.activePoll = undefined;
         config.lastPollWasShuffled = wasRimescolo;
